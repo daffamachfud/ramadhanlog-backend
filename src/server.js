@@ -11,10 +11,22 @@ const laporanRoutes = require("./routes/laporanRoutes");
 dotenv.config();
 const app = express();
 
+const allowedOrigins = [
+    'http://localhost:3000',  // Untuk pengujian lokal
+    'http://haizumapp.com',   // Domain produksi
+    'https://haizumapp.com'   // Jika nanti pakai HTTPS
+];
+
 app.use(cors({
-    origin: "http://localhost:3000", // Izinkan frontend di port 3000 mengakses backend
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-    credentials: true, // Jika ada cookies atau auth header
+    credentials: true
 }));
 
 app.use(express.json());

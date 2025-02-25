@@ -8,10 +8,22 @@ const authRoutes = require("./routes/authRoutes"); // Import authRoutes
 const app = express();
 
 // Middleware
+const allowedOrigins = [
+    'http://localhost:3000',  // Untuk pengujian lokal
+    'http://haizumapp.com',   // Domain produksi
+    'https://haizumapp.com'   // Jika nanti pakai HTTPS
+];
+
 app.use(cors({
-  origin: "http://localhost:3000", // Izinkan frontend di port 3000 mengakses backend
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  credentials: true, // Jika ada cookies atau auth header
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+    credentials: true
 }));
 app.use(helmet());
 app.use(morgan("dev"));
