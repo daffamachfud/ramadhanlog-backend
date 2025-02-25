@@ -8,4 +8,6 @@ router.post('/register', authController.register);
 // Login (Jangan pakai middleware autentikasi)
 router.post('/login', authController.login);
 
+
+
 module.exports = router;

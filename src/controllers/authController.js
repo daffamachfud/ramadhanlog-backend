@@ -1,21 +1,32 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const knex = require('../db/knex');  // Sesuaikan dengan konfigurasi knex
+const db = require('../config/db'); // Pastikan path benar sesuai struktur proyek
 
 const register = async (req, res) => {
     try {
-        const { name, email, password, role} = req.body; // ✅ Set default "tholib" jika tidak ada
+        const { name, email, password, role, halaqahCode} = req.body; // ✅ Set default "tholib" jika tidak ada
 
         // Cek apakah email sudah digunakan
         const existingUser = await knex('users').where({ email }).first();
+
+        console.log("halaqahcode: ",halaqahCode)
+        if (!halaqahCode) {
+            return res.status(400).json({ message: "Kode halaqah harus diisi" });
+        }
+
+        // 2. Cek apakah halaqah ada berdasarkan kode
+        const halaqah = await db('halaqah').where('code', halaqahCode).first();
+        if (!halaqah) {
+            return res.status(404).json({ message: "Kode halaqah tidak valid" });
+        }
+
         if (existingUser) {
             return res.status(400).json({ message: "Email sudah terdaftar" });
         }
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
-
-        // Insert user ke database
         const [newUser] = await knex('users')
             .insert({
                 name,
@@ -24,6 +35,11 @@ const register = async (req, res) => {
                 role,  // ✅ Pastikan role tidak null
             })
             .returning(['id', 'name', 'email', 'role']);
+
+            await db('relasi_halaqah_tholib').insert({
+                tholib_id: newUser.id,
+                halaqah_id: halaqah.id
+              });
 
         res.status(201).json({ message: "Registrasi berhasil", user: newUser });
     } catch (error) {

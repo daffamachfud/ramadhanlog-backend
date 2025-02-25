@@ -8,7 +8,11 @@ const authRoutes = require("./routes/authRoutes"); // Import authRoutes
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: "http://localhost:3000", // Izinkan frontend di port 3000 mengakses backend
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  credentials: true, // Jika ada cookies atau auth header
+}));
 app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json());
