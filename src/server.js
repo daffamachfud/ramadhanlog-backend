@@ -19,6 +19,9 @@ app.use(cors({
 
 app.use(express.json());
 
+app.get("/", (req, res) => {
+    res.send("RamadhanLog Backend Running!");
+});
 app.use('/api/auth', authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/amalan", amalanRoutes)
