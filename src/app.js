@@ -19,7 +19,9 @@ app.use(express.json());
 
 // Gunakan route yang tersedia
 app.use("/api/auth", authRoutes); // Semua route di authRoutes akan memiliki prefix "/api/auth"
-
+app.get("/", (req, res) => {
+  res.send("RamadhanLog Backend Running!");
+});
 // Endpoint utama (optional)
 app.get("/api", (req, res) => {
   res.json({ message: "API is running!" });
