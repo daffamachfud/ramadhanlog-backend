@@ -5,6 +5,8 @@ const authRoutes = require('./routes/auth');
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const amalanRoutes = require("./routes/amalanRoutes");
 const halaqahRoutes = require("./routes/halaqahRoutes");
+const laporanRoutes = require("./routes/laporanRoutes");
+
 
 dotenv.config();
 const app = express();
@@ -21,6 +23,7 @@ app.use('/api/auth', authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/amalan", amalanRoutes)
 app.use("/api/halaqah", halaqahRoutes)
+app.use("/api/laporan-tholib", laporanRoutes);
 
 
 const PORT = process.env.PORT || 5001;

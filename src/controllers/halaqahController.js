@@ -22,4 +22,31 @@ const getHalaqahByMurabbi = async (req, res) => {
   }
 };
 
-module.exports = { getHalaqahByMurabbi };
+const addHalaqah = async (req, res) => {
+    try {
+      const { name, code } = req.body;
+      const murabbi_id = req.user.id; // Ambil ID murabbi dari token
+  
+      if (!name || !code) {
+        return res.status(400).json({ message: "Nama dan kode halaqah wajib diisi" });
+      }
+  
+      // Cek apakah kode halaqah sudah ada
+      const existingHalaqah = await db("halaqah").where({ code }).first();
+      if (existingHalaqah) {
+        return res.status(400).json({ message: "Kode halaqah sudah digunakan" });
+      }
+  
+      // Insert data ke database
+      const [newHalaqah] = await db("halaqah")
+        .insert({ name, code, murabbi_id })
+        .returning(["id", "name", "code", "murabbi_id"]);
+  
+      res.status(201).json({ message: "Halaqah berhasil ditambahkan", data: newHalaqah });
+    } catch (error) {
+      console.error("Error adding halaqah:", error);
+      res.status(500).json({ message: "Terjadi kesalahan server" });
+    }
+  };
+
+module.exports = { getHalaqahByMurabbi, addHalaqah };

@@ -7,7 +7,6 @@ const catatAmalanHarian = async (req, res) => {
       const { amalan } = req.body; // Ambil daftar amalan dari request
 
       console.log("User dari token:", req.user);
-
       console.log('result user id = ',user_id)
   
       if (!amalan || !Array.isArray(amalan) || amalan.length === 0) {
@@ -23,16 +22,28 @@ const catatAmalanHarian = async (req, res) => {
         return res.status(404).json({ message: "Amalan tidak ditemukan" });
       }
   
-      // Siapkan data untuk disimpan di tabel amalan_harian
-      const amalanHarianData = amalanList.map((amalanItem) => ({
-        user_id,
-        amalan_id: amalanItem.id,
-        tanggal: today,
-        status: true, // ✅ Amalan sudah dilakukan (karena dicentang)
-      }));
+      for (const amalanItem of amalanList) {
+        // Cek apakah data sudah ada
+        const existingAmalan = await db("amalan_harian")
+          .where({
+            user_id,
+            amalan_id: amalanItem.id,
+            tanggal: today,
+          })
+          .first();
   
-      // Masukkan ke database
-      await db("amalan_harian").insert(amalanHarianData);
+        if (!existingAmalan) {
+          // Jika belum ada, insert data baru
+          await db("amalan_harian").insert({
+            user_id,
+            amalan_id: amalanItem.id,
+            tanggal: today,
+            status: true, // ✅ Amalan sudah dilakukan
+          });
+        } else {
+          console.log(`Amalan dengan ID ${amalanItem.id} sudah ada, tidak perlu insert ulang.`);
+        }
+      }
   
       res.status(201).json({ message: "Amalan harian berhasil dicatat" });
     } catch (error) {

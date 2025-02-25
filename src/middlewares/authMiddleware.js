@@ -57,6 +57,13 @@ const checkMurabbi = (req, res, next) => {
     }
     next();
   };
+
+  const checkTholib = (req, res, next) => {
+    if (req.user.role !== "tholib") {
+      return res.status(403).json({ message: "Akses hanya untuk Murabbi" });
+    }
+    next();
+  };
   
   // ✅ Pastikan ini sudah benar
-  module.exports = { verifyToken, checkMurabbi };
+  module.exports = { verifyToken, checkMurabbi, checkTholib };

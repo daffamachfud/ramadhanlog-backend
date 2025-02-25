@@ -81,4 +81,83 @@ const getDashboardMurabbi = async (req, res) => {
   }
 };
 
-module.exports = { getDashboardMurabbi };
+const getDashboardTholib = async (req, res) => {
+  try {
+    const tholibId = req.user.id; // Ambil ID murabbi dari token JWT
+    const today = new Date().toISOString().split("T")[0];
+
+    // 1️⃣ RINGKASAN HARIAN
+    const [{ total }] = await db("amalan_harian")
+      .where({ user_id: tholibId, tanggal: today, status: true })
+      .count("* as total");
+
+    const totalAmalan = 17;
+    const percentage = ((total / totalAmalan) * 100).toFixed(2) + "%";
+
+    const ringkasanHarian = {
+      date: today,
+      completed: parseInt(total),
+      total: totalAmalan,
+      percentage,
+    };
+
+    // 2️⃣ DATA PERMINGGU
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay()); // Set ke hari Minggu
+
+    const results = await db("amalan_harian")
+    .select(db.raw("to_char(tanggal, 'FMDay') as hari, COUNT(*) as total"))
+    .where({ user_id: tholibId, status: true })
+    .andWhere("tanggal", ">=", startOfWeek.toISOString().split("T")[0])
+    .groupByRaw("to_char(tanggal, 'FMDay')");
+
+    const hariMapping = {
+      Monday: "Senin",
+      Tuesday: "Selasa",
+      Wednesday: "Rabu",
+      Thursday: "Kamis",
+      Friday: "Jumat",
+      Saturday: "Sabtu",
+      Sunday: "Ahad",
+    };
+    // Urutan hari dalam Bahasa Indonesia
+    const hariList = [
+      "Senin",
+      "Selasa",
+      "Rabu",
+      "Kamis",
+      "Jumat",
+      "Sabtu",
+      "Ahad",
+    ];
+    const dataPerminggu = hariList.map((hari) => {
+      const result = results.find((item) => hariMapping[item.hari.trim()] === hari);
+      return { name: hari, value: result ? parseInt(result.total) : 0 };
+    });
+    // 3️⃣ STATUS AMALAN
+    const allAmalan = await db("amalan").select("id", "name");
+    const completedAmalan = await db("amalan_harian")
+      .where({ user_id: tholibId, tanggal: today, status: true })
+      .pluck("amalan_id");
+
+    const completed = allAmalan.filter((amalan) => completedAmalan.includes(amalan.id));
+    const notCompleted = allAmalan.filter((amalan) => !completedAmalan.includes(amalan.id));
+
+    const statusAmalan = {
+      completed: completed.map((a) => a.name),
+      notCompleted: notCompleted.map((a) => a.name),
+    };
+
+    // 🔥 RESPONSE FINAL
+    res.json({
+      ringkasanHarian,
+      dataPerminggu,
+      statusAmalan,
+    });
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    return res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
+
+module.exports = { getDashboardMurabbi, getDashboardTholib };
