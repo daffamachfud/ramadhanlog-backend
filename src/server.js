@@ -33,8 +33,8 @@ app.use(cors({
 
 app.use(express.json());
 
-app.listen(5003, () => {
-    console.log("RamadhanLog Backend Running on port 5003");
+app.listen(5002, () => {
+    console.log("RamadhanLog Backend Running on port 5002");
 });
 app.get("/", (req, res) => {
     res.send("RamadhanLog Backend Running!");
@@ -49,5 +49,5 @@ app.use("/api/halaqah", halaqahRoutes)
 app.use("/api/laporan-tholib", laporanRoutes);
 
 
-const PORT = process.env.PORT || 5003;
+const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => console.log(`🚀 Server berjalan di http://localhost:${PORT}`));
