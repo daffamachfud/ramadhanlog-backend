@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: Deploy Backend to VPS
 on:
   push:
     branches:
@@ -9,10 +9,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
       - name: Install dependencies
         run: yarn install
+
       - name: Build app
         run: yarn build
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v0.1.7
         with:
@@ -21,6 +24,8 @@ jobs:
           key: ${{ secrets.VPS_KEY }}
           script: |
             cd /var/www/ramadhanlog-backend
+            git config pull.rebase false
             git pull origin main
             yarn install
-            pm2 restart ramadhanlog-backend
+            yarn build
+            pm2 restart ramadhanlog-backend 
