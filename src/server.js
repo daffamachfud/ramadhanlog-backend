@@ -12,9 +12,11 @@ dotenv.config();
 const app = express();
 
 const allowedOrigins = [
-    'http://localhost:3000',  // Untuk pengujian lokal
-    'http://haizumapp.com',   // Domain produksi
-    'https://haizumapp.com'   // Jika nanti pakai HTTPS
+    'http://localhost:3000',
+    'https://haizumapp.com',
+    'http://haizumapp.com',
+    'https://www.haizumapp.com',
+    'http://www.haizumapp.com'
 ];
 
 app.use(cors({
