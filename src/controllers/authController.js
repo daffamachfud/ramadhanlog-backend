@@ -5,41 +5,48 @@ const db = require('../config/db'); // Pastikan path benar sesuai struktur proye
 
 const register = async (req, res) => {
     try {
-        const { name, email, password, role, halaqahCode} = req.body; // ✅ Set default "tholib" jika tidak ada
+        const { name, email, password, role = "tholib", halaqahCode } = req.body; // Default role = "tholib"
 
         // Cek apakah email sudah digunakan
-        const existingUser = await knex('users').where({ email }).first();
-
-        console.log("halaqahcode: ",halaqahCode)
-        if (!halaqahCode) {
-            return res.status(400).json({ message: "Kode halaqah harus diisi" });
-        }
-
-        // 2. Cek apakah halaqah ada berdasarkan kode
-        const halaqah = await db('halaqah').where('code', halaqahCode).first();
-        if (!halaqah) {
-            return res.status(404).json({ message: "Kode halaqah tidak valid" });
-        }
-
+        const existingUser = await knex("users").where({ email }).first();
         if (existingUser) {
             return res.status(400).json({ message: "Email sudah terdaftar" });
         }
 
+        // Jika role adalah "tholib", halaqahCode wajib diisi
+        let halaqah = null;
+        if (role === "tholib") {
+            if (!halaqahCode) {
+                return res.status(400).json({ message: "Kode halaqah harus diisi untuk Tholib" });
+            }
+
+            // Cek apakah halaqah ada berdasarkan kode
+            halaqah = await db("halaqah").where("code", halaqahCode).first();
+            if (!halaqah) {
+                return res.status(404).json({ message: "Kode halaqah tidak valid" });
+            }
+        }
+
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
-        const [newUser] = await knex('users')
+
+        // Insert user ke database
+        const [newUser] = await knex("users")
             .insert({
                 name,
                 email,
                 password: hashedPassword,
-                role,  // ✅ Pastikan role tidak null
+                role, // Pastikan role tetap ada
             })
-            .returning(['id', 'name', 'email', 'role']);
+            .returning(["id", "name", "email", "role"]);
 
-            await db('relasi_halaqah_tholib').insert({
+        // Jika role adalah "tholib", masukkan data ke tabel relasi_halaqah_tholib
+        if (role === "tholib" && halaqah) {
+            await db("relasi_halaqah_tholib").insert({
                 tholib_id: newUser.id,
-                halaqah_id: halaqah.id
-              });
+                halaqah_id: halaqah.id,
+            });
+        }
 
         res.status(201).json({ message: "Registrasi berhasil", user: newUser });
     } catch (error) {
