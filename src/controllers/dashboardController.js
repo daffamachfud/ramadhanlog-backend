@@ -160,4 +160,105 @@ const getDashboardTholib = async (req, res) => {
   }
 };
 
-module.exports = { getDashboardMurabbi, getDashboardTholib };
+const getDashboardMurabbiReported = async (req, res) => {
+  try {
+    const murabbiId = req.user.id; // Ambil ID murabbi dari token JWT
+    const today = new Date().toISOString().split("T")[0];
+
+    // 1. Ambil semua tholib yang tergabung dalam halaqah murabbi
+    const tholibs = await db("users")
+      .join("relasi_halaqah_tholib", "users.id", "=", "relasi_halaqah_tholib.tholib_id")
+      .join("halaqah", "relasi_halaqah_tholib.halaqah_id", "=", "halaqah.id")
+      .where("halaqah.murabbi_id", murabbiId)
+      .select("users.id", "users.name", "halaqah.id as halaqah_id", "halaqah.name as nama_halaqah");
+
+    const totalTholib = tholibs.length;
+    const tholibIds = tholibs.map(t => t.id);
+
+    if (totalTholib === 0) {
+      return res.json({
+        success: true,
+        data: {
+          totalTholib: 0,
+          reportedTholib: 0,
+          avgTilawah: 0,
+          unreportedTholib: 0,
+          tholibReports: [],
+        },
+      });
+    }
+
+    // 2. Ambil semua tholib yang sudah laporan hari ini
+    const reportedTholibs = await db("amalan_harian")
+      .select("user_id")
+      .count("* as total_amalan")
+      .whereIn("user_id", tholibIds)
+      .andWhere("tanggal", today)
+      .groupBy("user_id");
+
+    const reportedCount = reportedTholibs.length;
+
+    // 3. Gabungkan data tholib yang sudah laporan dengan data halaqah
+    const tholibReports = reportedTholibs.map((reported) => {
+      const tholibData = tholibs.find((t) => t.id === reported.user_id);
+      return {
+        id: reported.user_id,
+        name: tholibData?.name || "Unknown",
+        nama_halaqah: tholibData?.nama_halaqah || "Unknown",
+        halaqah_id: tholibData?.halaqah_id || null,
+        total_amalan: reported.total_amalan, // Jumlah amalan yang dicatat oleh tholib hari ini
+      };
+    });
+
+    
+
+  
+    return res.json({
+      success: true,
+      data: {
+        totalTholib,
+        reportedTholib: reportedCount,
+        tholibReports,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    return res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
+
+const getDashboardMurabbiUnreported = async (req, res) => {
+  try {
+    const murabbiId = req.user.id; // Ambil ID murabbi dari token JWT
+    const today = new Date().toISOString().split("T")[0];
+
+    // 1. Ambil semua tholib yang tergabung dalam halaqah murabbi
+    const tholibs = await db("users")
+      .join("relasi_halaqah_tholib", "users.id", "=", "relasi_halaqah_tholib.tholib_id")
+      .join("halaqah", "relasi_halaqah_tholib.halaqah_id", "=", "halaqah.id")
+      .where("halaqah.murabbi_id", murabbiId)
+      .select("users.id", "users.name", "halaqah.name as nama_halaqah");
+
+    if (tholibs.length === 0) {
+      return res.json({ success: true, data: [] }); // Tidak ada tholib
+    }
+
+    // 2. Ambil ID tholib yang sudah laporan hari ini
+    const reportedTholibIds = await db("amalan_harian")
+      .select("user_id")
+      .whereIn("user_id", tholibs.map(t => t.id))
+      .andWhere("tanggal", today)
+      .groupBy("user_id")
+      .pluck("user_id"); // Ambil hanya array ID yang sudah laporan
+
+    // 3. Filter tholib yang belum laporan
+    const unreportedTholibs = tholibs.filter(t => !reportedTholibIds.includes(t.id));
+
+    return res.json({ success: true, data: unreportedTholibs });
+  } catch (error) {
+    console.error("Error fetching unreported tholib data:", error);
+    return res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
+
+module.exports = { getDashboardMurabbi, getDashboardTholib, getDashboardMurabbiReported, getDashboardMurabbiUnreported };

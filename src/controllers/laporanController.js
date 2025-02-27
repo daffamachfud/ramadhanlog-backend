@@ -38,23 +38,31 @@ exports.getLaporanTholib = async (req, res) => {
 // Ambil detail amalan tholib berdasarkan ID
 exports.getDetailLaporanTholib = async (req, res) => {
   try {
-    const { tholibId, tanggal } = req.body; // Ambil dari body request
+    const { tholibId, tanggal } = req.body;
 
     console.log("Body Tholib ID:", tholibId);
     console.log("Body Tanggal:", tanggal);
-    // Pastikan query menggunakan await agar tidak menghasilkan Promise
-    const laporan = await db("amalan_harian as ah")
-    .select(
-      "ah.id",
-      "ah.tanggal",
-      "a.name as nama_amalan",
-      "ah.status"
-    )
-    .innerJoin("amalan as a", "ah.amalan_id", "a.id")
-    .where("ah.user_id", tholibId)
-    .andWhere("ah.tanggal", tanggal)
-    .orderBy("ah.tanggal", "asc");
-    
+
+    const laporan = await db("amalan as a")
+      .select(
+        "a.id as amalan_id",
+        "a.name as nama_amalan",
+        "ah.id as laporan_id",
+        "ah.tanggal",
+        db.raw(`
+          CASE 
+            WHEN ah.status IS NULL THEN false
+            ELSE ah.status
+          END as status
+        `) // Jika NULL, jadikan false (boolean)
+      )
+      .leftJoin("amalan_harian as ah", function () {
+        this.on("a.id", "=", "ah.amalan_id")
+          .andOn("ah.user_id", "=", db.raw("?", [tholibId]))
+          .andOn("ah.tanggal", "=", db.raw("?", [tanggal]));
+      })
+      .orderBy("a.id", "asc");
+
     console.log("Query result:", laporan);
     return res.json({ data: laporan });
   } catch (error) {
@@ -65,3 +73,4 @@ exports.getDetailLaporanTholib = async (req, res) => {
     });
   }
 };
+
