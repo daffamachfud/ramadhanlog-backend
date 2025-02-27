@@ -8,7 +8,7 @@ const getHalaqahByMurabbi = async (req, res) => {
     const halaqahList = await db("halaqah")
       .where("murabbi_id", murabbi_id)
       .leftJoin("relasi_halaqah_tholib", "halaqah.id", "=", "relasi_halaqah_tholib.halaqah_id")
-      .select("halaqah.id", "halaqah.name as nama_halaqah", "halaqah.code")
+      .select("halaqah.id", "halaqah.name as nama_halaqah", "halaqah.code", "halaqah.code_pengawas")
       .count("relasi_halaqah_tholib.tholib_id as jumlah_anggota")
       .groupBy("halaqah.id");
 
@@ -24,11 +24,11 @@ const getHalaqahByMurabbi = async (req, res) => {
 
 const addHalaqah = async (req, res) => {
     try {
-      const { name, code } = req.body;
+      const { name, code, code_pengawas } = req.body;
       const murabbi_id = req.user.id; // Ambil ID murabbi dari token
   
-      if (!name || !code) {
-        return res.status(400).json({ message: "Nama dan kode halaqah wajib diisi" });
+      if (!name || !code || !code_pengawas) {
+        return res.status(400).json({ message: "Nama, kode halaqah dan kode pengawas halaqah wajib diisi" });
       }
   
       // Cek apakah kode halaqah sudah ada
@@ -39,8 +39,8 @@ const addHalaqah = async (req, res) => {
   
       // Insert data ke database
       const [newHalaqah] = await db("halaqah")
-        .insert({ name, code, murabbi_id })
-        .returning(["id", "name", "code", "murabbi_id"]);
+        .insert({ name, code, murabbi_id, code_pengawas})
+        .returning(["id", "name", "code", "murabbi_id", "code_pengawas"]);
   
       res.status(201).json({ message: "Halaqah berhasil ditambahkan", data: newHalaqah });
     } catch (error) {
