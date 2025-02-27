@@ -37,6 +37,36 @@ exports.getLaporanTholib = async (req, res) => {
   }
 };
 
+exports.getLaporanTholibByPengawas = async (req, res) => {
+  try {
+    const { name } = req.query;
+    const pengawasId = req.user.id;
+    
+    let query = db("users as u")
+    .join("relasi_halaqah_tholib as rth", "u.id", "rth.tholib_id")
+    .join("halaqah as h", "rth.halaqah_id", "h.id")
+    .where("h.pengawas_id", pengawasId) 
+    .select("u.id", "u.name", "h.name as halaqah");
+
+    const values = [];
+
+   // Filter jika nama tholib diberikan
+   if (name) {
+    query = query.where("u.name", "like", `%${name}%`);
+  }
+
+    const laporan = await query;
+
+    res.json(laporan);
+  } catch (error) {
+    console.error("Error get laporan tholib:", error);
+    res.status(500).json({
+      message: "Terjadi kesalahan saat mengambil data laporan tholib",
+      error: error.message,
+    });
+  }
+};
+
 // Ambil detail amalan tholib berdasarkan ID
 exports.getDetailLaporanTholib = async (req, res) => {
   try {

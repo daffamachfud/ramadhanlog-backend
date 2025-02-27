@@ -5,27 +5,45 @@ const db = require('../config/db'); // Pastikan path benar sesuai struktur proye
 
 const register = async (req, res) => {
     try {
-        const { name, email, password, role = "tholib", halaqahCode } = req.body; // Default role = "tholib"
+        const { name, email, password, halaqahCode, role } = req.body;
 
-        // Cek apakah email sudah digunakan
+        // Cek apakah email sudah terdaftar
         const existingUser = await knex("users").where({ email }).first();
         if (existingUser) {
             return res.status(400).json({ message: "Email sudah terdaftar" });
         }
 
-        // Jika role adalah "tholib", halaqahCode wajib diisi
-        let halaqah = null;
-        if (role === "tholib") {
-            if (!halaqahCode) {
-                return res.status(400).json({ message: "Kode halaqah harus diisi untuk Tholib" });
-            }
+        // Jika yang daftar adalah Murabbi, langsung proses tanpa perlu cek kode halaqah
+        if (role === "murabbi") {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            const [newUser] = await knex("users")
+                .insert({
+                    name,
+                    email,
+                    password: hashedPassword,
+                    role: "murabbi",
+                })
+                .returning(["id", "name", "email", "role"]);
 
-            // Cek apakah halaqah ada berdasarkan kode
-            halaqah = await db("halaqah").where("code", halaqahCode).first();
-            if (!halaqah) {
-                return res.status(404).json({ message: "Kode halaqah tidak valid" });
-            }
+            return res.status(201).json({ message: "Registrasi Murabbi berhasil", user: newUser });
         }
+
+        // Validasi kode halaqah jika bukan Murabbi
+        if (!halaqahCode) {
+            return res.status(400).json({ message: "Kode halaqah diperlukan untuk Tholib atau Pengawas" });
+        }
+
+        const halaqah = await knex("halaqah")
+            .where("code", halaqahCode)
+            .orWhere("code_pengawas", halaqahCode)
+            .first();
+
+        if (!halaqah) {
+            return res.status(404).json({ message: "Kode halaqah tidak valid" });
+        }
+
+        // Tentukan role berdasarkan kode yang dimasukkan
+        let finalRole = halaqahCode === halaqah.code_pengawas ? "pengawas" : "tholib";
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -36,22 +54,29 @@ const register = async (req, res) => {
                 name,
                 email,
                 password: hashedPassword,
-                role, // Pastikan role tetap ada
+                role: finalRole,
             })
             .returning(["id", "name", "email", "role"]);
 
-        // Jika role adalah "tholib", masukkan data ke tabel relasi_halaqah_tholib
-        if (role === "tholib" && halaqah) {
-            await db("relasi_halaqah_tholib").insert({
+        // Jika Tholib, simpan relasi ke tabel `relasi_halaqah_tholib`
+        if (finalRole === "tholib" || finalRole === "pengawas") {
+            await knex("relasi_halaqah_tholib").insert({
                 tholib_id: newUser.id,
                 halaqah_id: halaqah.id,
             });
         }
 
+        // Jika Pengawas, set sebagai pengawas utama jika belum ada
+        if (finalRole === "pengawas" && !halaqah.pengawas_id) {
+            await knex("halaqah")
+                .where("id", halaqah.id)
+                .update({ pengawas_id: newUser.id });
+        }
+
         res.status(201).json({ message: "Registrasi berhasil", user: newUser });
     } catch (error) {
         console.error("Error register:", error);
-        res.status(500).json({ message: "Terjadi kesalahan server" });
+        res.status(500).json({ message: error.message || "Terjadi kesalahan server" });
     }
 };
 
