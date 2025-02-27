@@ -31,9 +31,6 @@ app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json());
 
-app.listen(5002, () => {
-  console.log("RamadhanLog Backend Running on port 5002");
-});
 // Gunakan route yang tersedia
 app.use("/api/auth", authRoutes); // Semua route di authRoutes akan memiliki prefix "/api/auth"
 app.get("/", (req, res) => {
