@@ -1,21 +1,26 @@
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 
 const authenticateJWT = (req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
 
-    const token = req.header('Authorization');
+  const token = req.header("Authorization");
 
-    if (!token) {
-        return res.status(401).json({ message: "Akses ditolak, token tidak ditemukan" });
-    }
+  if (!token) {
+    return res
+      .status(401)
+      .json({ message: "Akses ditolak, token tidak ditemukan" });
+  }
 
-    try {
-        const decoded = jwt.verify(token.replace('Bearer ', ''), process.env.JWT_SECRET);
-        req.user = decoded;
-        next();
-    } catch (error) {
-        return res.status(403).json({ message: "Token tidak valid" });
-    }
+  try {
+    const decoded = jwt.verify(
+      token.replace("Bearer ", ""),
+      process.env.JWT_SECRET
+    );
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(403).json({ message: "Token tidak valid" });
+  }
 };
 
 module.exports = { authenticateJWT };
@@ -49,21 +54,25 @@ const verifyToken = (req, res, next) => {
     res.status(403).json({ message: "Token tidak valid" });
   }
 };
-  
+
 // Middleware untuk memastikan pengguna adalah Murabbi
 const checkMurabbi = (req, res, next) => {
-    if (req.user.role !== "murabbi") {
-      return res.status(403).json({ message: "Akses hanya untuk Murabbi" });
-    }
-    next();
-  };
+  if (req.user.role !== "murabbi" && req.user.role !== "pengawas") {
+    return res
+      .status(403)
+      .json({ message: "Akses hanya untuk Murabbi atau Pengawas" });
+  }
+  next();
+};
 
-  const checkTholib = (req, res, next) => {
-    if (req.user.role !== "tholib") {
-      return res.status(403).json({ message: "Akses hanya untuk Murabbi" });
-    }
-    next();
-  };
-  
-  // ✅ Pastikan ini sudah benar
-  module.exports = { verifyToken, checkMurabbi, checkTholib };
+const checkTholib = (req, res, next) => {
+  if (req.user.role !== "tholib" && req.user.role !== "pengawas") {
+    return res
+      .status(403)
+      .json({ message: "Akses hanya untuk Tholib atau Pengawas" });
+  }
+  next();
+};
+
+// ✅ Pastikan ini sudah benar
+module.exports = { verifyToken, checkMurabbi, checkTholib };
