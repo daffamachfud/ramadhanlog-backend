@@ -4,11 +4,13 @@ const db = require("../config/db");
 exports.getLaporanTholib = async (req, res) => {
   try {
     const { name, halaqah } = req.query;
-
+    const murabbiId = req.user.id;
+    
     let query = db("users as u")
     .join("relasi_halaqah_tholib as rth", "u.id", "rth.tholib_id")
     .join("halaqah as h", "rth.halaqah_id", "h.id")
     .where("u.role", "tholib")
+    .where("h.murabbi_id", murabbiId) 
     .select("u.id", "u.name", "h.name as halaqah");
 
     const values = [];
