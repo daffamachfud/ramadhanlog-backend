@@ -92,7 +92,7 @@ exports.getDetailLaporanTholib = async (req, res) => {
           .andOn("ah.user_id", "=", db.raw("?", [tholibId]))
           .andOn("ah.tanggal", "=", db.raw("?", [tanggal]));
       })
-      .orderBy("a.id", "asc");
+      .orderBy("a.order_number", "asc");
 
     console.log("Query result:", laporan);
     return res.json({ data: laporan });

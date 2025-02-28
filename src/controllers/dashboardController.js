@@ -246,7 +246,7 @@ const getDashboardTholib = async (req, res) => {
       return { name: hari, value: result ? parseInt(result.total) : 0 };
     });
     // 3️⃣ STATUS AMALAN
-    const allAmalan = await db("amalan").select("id", "name");
+    const allAmalan = await db("amalan").select("id", "name").orderBy('order_number', 'asc');
     const completedAmalan = await db("amalan_harian")
       .where({ user_id: tholibId, tanggal: today, status: true })
       .pluck("amalan_id");
