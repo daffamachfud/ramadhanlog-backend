@@ -319,6 +319,7 @@ const getDashboardMurabbiReported = async (req, res) => {
       .count("* as total_amalan")
       .whereIn("user_id", tholibIds)
       .andWhere("tanggal", today)
+      .andWhere("status",true)
       .groupBy("user_id");
 
     const reportedCount = reportedTholibs.length;
@@ -393,6 +394,7 @@ const getDashboardPengawasReported = async (req, res) => {
       .count("* as total_amalan")
       .whereIn("user_id", tholibIds)
       .andWhere("tanggal", today)
+      .andWhere("status",true)
       .groupBy("user_id");
 
     const reportedCount = reportedTholibs.length;
@@ -405,7 +407,7 @@ const getDashboardPengawasReported = async (req, res) => {
         name: tholibData?.name || "Unknown",
         nama_halaqah: tholibData?.nama_halaqah || "Unknown",
         halaqah_id: tholibData?.halaqah_id || null,
-        total_amalan: reported.total_amalan, // Jumlah amalan yang dicatat oleh tholib hari ini
+        total_amalan: reported.total_amalan - 1, // Jumlah amalan yang dicatat oleh tholib hari ini
       };
     });
 
