@@ -52,7 +52,7 @@ const catatAmalanHarian = async (req, res) => {
         // ✅ Normalisasi nilai ke lowercase untuk menghindari perbedaan huruf besar/kecil
         const nilaiLower = nilai ? nilai.toLowerCase() : "";
 
-        let statusAmalan = true; // Default status = true
+        let updatedStatus = amalanItem.done;
         console.log("amalan ini nilai :", nilaiLower);
         if (
           (amalanExists.name.toLowerCase() === "sholat sunnah malam" && (nilaiLower === "tidak shalat" || nilaiLower === "")) ||
@@ -60,14 +60,14 @@ const catatAmalanHarian = async (req, res) => {
           (amalanExists.name.toLowerCase() === "sholat dhuha" && (nilaiLower === "tidak shalat" || nilaiLower === "")) || 
           (amalanExists.name.toLowerCase() === "shalat rawatib")
         ) {
-          statusAmalan = false;
+          updatedStatus = false;
         }
 
         await db("amalan_harian").insert({
           user_id,
           amalan_id: id,
           tanggal: today,
-          status: statusAmalan, // ❗ Status berubah sesuai kondisi di atas
+          status: updatedStatus, // ❗ Status berubah sesuai kondisi di atas
           nilai: nilai || "", // Simpan nilai dari frontend, jika tidak ada isi dengan string kosong
         });
       } else {
