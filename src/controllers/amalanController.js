@@ -186,8 +186,6 @@ const getAmalanHarian = async (req, res) => {
     const currentMinute = new Date().getMinutes();
     const currentTime = `${currentHour.toString().padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}`;
     
-    console.log(`⏰ Waktu sekarang: ${currentTime}`);
-
     // ✅ Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
     let maghribTime;
@@ -207,6 +205,7 @@ const getAmalanHarian = async (req, res) => {
       return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
     }
 
+    console.log(`⏰ Waktu sekarang: ${currentTime}`);
     console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
 
     // ✅ Tentukan apakah sekarang sudah melewati Maghrib
@@ -222,7 +221,10 @@ const getAmalanHarian = async (req, res) => {
 
     // ✅ Tentukan tanggal Hijriah yang sesuai
     let hijriDate = moment(tanggalMasehi, "YYYY-MM-DD").format("iD iMMMM iYYYY") + " H";
-
+    if (isAfterMaghrib) {
+          hijriDate = moment(todayMasehi, "YYYY-MM-DD").add(1, "days").format("iD iMMMM iYYYY") + " H";
+    }
+    
     console.log(`📅 Tanggal Masehi: ${tanggalMasehi}`);
     console.log(`📅 Tanggal Hijriah: ${hijriDate}`);
 
