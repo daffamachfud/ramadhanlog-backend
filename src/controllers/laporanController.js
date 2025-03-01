@@ -134,7 +134,6 @@ exports.getDetailLaporanTholib = async (req, res) => {
       tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
     }
 
-    console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
     console.log(`📅 Tanggal Masehi yang digunakan: ${tanggalMasehi}`);
 
     let hijriDate;
