@@ -9,30 +9,29 @@ const catatAmalanHarian = async (req, res) => {
     const user_id = req.user.id;
     const { amalan } = req.body;
 
-    console.log("User dari token:", req.user);
-    console.log("result user id = ", user_id);
+    console.log("Ambil catatan amalan harian");
 
     if (!amalan || !Array.isArray(amalan) || amalan.length === 0) {
       return res.status(400).json({ message: "Daftar amalan tidak boleh kosong" });
     }
 
     // ✅ Ambil waktu saat ini di zona WIB (Asia/Jakarta)
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" });
+    let todayMasehi = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date());
 
-    // ✅ Format tanggal hari ini (YYYY-MM-DD)
-    let today = formatter.format(now);
-
-    // ✅ Ambil jam dan menit saat ini (Format: HH:mm)
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const currentTime = `${currentHour.toString().padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}`;
+    const currentTime = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23", // Format 24 jam (HH:mm)
+    }).format(new Date());
 
     console.log("🕰️ Waktu sekarang:", currentTime);
 
     // ✅ Ambil waktu Maghrib dari API waktu sholat BAW (Bandung ID: 1219)
     const cityId = "1219";
-    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${today}`;
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
 
     console.log("🌎 API Waktu Sholat:", prayerApiUrl);
 
