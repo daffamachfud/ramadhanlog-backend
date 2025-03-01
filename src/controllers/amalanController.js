@@ -209,7 +209,12 @@ const getAmalanHarian = async (req, res) => {
     console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
 
     // ✅ Tentukan apakah sekarang sudah melewati Maghrib
-    const isAfterMaghrib = currentTime >= maghribTime; // Bandingkan string "HH:mm"
+    const [currentHourNum, currentMinuteNum] = currentTime.split(":").map(Number);
+    const [maghribHourNum, maghribMinuteNum] = maghribTime.split(":").map(Number);
+
+    const isAfterMaghrib = 
+      currentHourNum > maghribHourNum || 
+      (currentHourNum === maghribHourNum && currentMinuteNum >= maghribMinuteNum);
 
     // ✅ Jika sudah lewat Maghrib, gunakan tanggal Masehi besok
     let tanggalMasehi = todayMasehi;
