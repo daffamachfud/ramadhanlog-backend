@@ -165,7 +165,6 @@ const getDashboardPengawas = async (req, res) => {
       hourCycle: "h23", // Format 24 jam (HH:mm)
     }).format(new Date());
 
-    console.log(`⏰ Waktu sekarang: ${currentTime}`);
 
     // 🔹 Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
@@ -186,10 +185,13 @@ const getDashboardPengawas = async (req, res) => {
       return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
     }
 
+    console.log(`⏰ Waktu sekarang: ${currentTime}`);
     console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
-
+    
     // ✅ Tentukan apakah sekarang sudah melewati Maghrib
-    const isBeforeMaghrib = currentTime < maghribTime;
+    const currentTimeDate = new Date(`2023-01-01T${currentTime}:00`); // Tambahkan tanggal dan detik
+    const maghribTimeDate = new Date(`2023-01-01T${maghribTime}:00`); // Tambahkan tanggal dan detik
+    const isBeforeMaghrib = currentTimeDate < maghribTimeDate;
 
     // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
     let tanggalMasehi = todayMasehi;
