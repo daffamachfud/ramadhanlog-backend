@@ -83,6 +83,37 @@ const getDashboardMurabbi = async (req, res) => {
         "halaqah.name as nama_halaqah" // Alias untuk membedakan dengan users.name
       );
 
+     // 4️⃣ AMBIL DATA WAKTU SHOLAT (API Kemenag RI)
+    // **🔹 Ambil data waktu sholat dari API BAW untuk Bandung (ID: 1219)**
+    const cityId = "1219"; 
+    const todayShalat = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" })
+      .format(new Date()); // Format YYYY-MM-DD
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
+
+    console.log("api prayer : ",prayerApiUrl)
+
+    let prayerTimes = {};
+
+    try {
+      const prayerResponse = await fetch(prayerApiUrl);
+      const prayerData = await prayerResponse.json();
+
+      if (prayerData.status === true) {
+        const jadwal = prayerData.data.jadwal;
+        prayerTimes = {
+          Subuh: jadwal.subuh,
+          Dzuhur: jadwal.dzuhur,
+          Ashar: jadwal.ashar,
+          Maghrib: jadwal.maghrib,
+          Isya: jadwal.isya,
+        };
+      } else {
+        console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data waktu sholat:", error);
+    }  
+
     return res.json({
       success: true,
       data: {
@@ -91,6 +122,7 @@ const getDashboardMurabbi = async (req, res) => {
         avgTilawah,
         unreportedTholib: unreportedCount,
         tholibReports,
+        prayerTimes
       },
     });
   } catch (error) {
@@ -134,6 +166,7 @@ const getDashboardPengawas = async (req, res) => {
           avgTilawah: 0,
           unreportedAnggota: 0,
           anggotaReports: [],
+          prayerTimes
         },
       });
     }
@@ -173,6 +206,37 @@ const getDashboardPengawas = async (req, res) => {
       )
       .select("id", "name as user_name", "role");
 
+      // 4️⃣ AMBIL DATA WAKTU SHOLAT (API Kemenag RI)
+    // **🔹 Ambil data waktu sholat dari API BAW untuk Bandung (ID: 1219)**
+    const cityId = "1219"; 
+    const todayShalat = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" })
+      .format(new Date()); // Format YYYY-MM-DD
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
+
+    console.log("api prayer : ",prayerApiUrl)
+
+    let prayerTimes = {};
+
+    try {
+      const prayerResponse = await fetch(prayerApiUrl);
+      const prayerData = await prayerResponse.json();
+
+      if (prayerData.status === true) {
+        const jadwal = prayerData.data.jadwal;
+        prayerTimes = {
+          Subuh: jadwal.subuh,
+          Dzuhur: jadwal.dzuhur,
+          Ashar: jadwal.ashar,
+          Maghrib: jadwal.maghrib,
+          Isya: jadwal.isya,
+        };
+      } else {
+        console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data waktu sholat:", error);
+    }
+
     return res.json({
       success: true,
       data: {
@@ -181,6 +245,7 @@ const getDashboardPengawas = async (req, res) => {
         avgTilawah,
         unreportedAnggota: unreportedCount,
         anggotaReports,
+        prayerTimes
       },
     });
   } catch (error) {
@@ -194,6 +259,8 @@ const getDashboardTholib = async (req, res) => {
   try {
     const tholibId = req.user.id; // Ambil ID murabbi dari token JWT
     const today = new Date().toISOString().split("T")[0];
+
+    console.log("tanggal :",today)
 
     // 1️⃣ RINGKASAN HARIAN
     const [{ total }] = await db("amalan_harian")
@@ -263,11 +330,43 @@ const getDashboardTholib = async (req, res) => {
       notCompleted: notCompleted.map((a) => a.name),
     };
 
+    // 4️⃣ AMBIL DATA WAKTU SHOLAT (API Kemenag RI)
+    // **🔹 Ambil data waktu sholat dari API BAW untuk Bandung (ID: 1219)**
+    const cityId = "1219"; 
+    const todayShalat = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" })
+      .format(new Date()); // Format YYYY-MM-DD
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
+
+    console.log("api prayer : ",prayerApiUrl)
+
+    let prayerTimes = {};
+
+    try {
+      const prayerResponse = await fetch(prayerApiUrl);
+      const prayerData = await prayerResponse.json();
+
+      if (prayerData.status === true) {
+        const jadwal = prayerData.data.jadwal;
+        prayerTimes = {
+          Subuh: jadwal.subuh,
+          Dzuhur: jadwal.dzuhur,
+          Ashar: jadwal.ashar,
+          Maghrib: jadwal.maghrib,
+          Isya: jadwal.isya,
+        };
+      } else {
+        console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data waktu sholat:", error);
+    }
+
     // 🔥 RESPONSE FINAL
     res.json({
       ringkasanHarian,
       dataPerminggu,
       statusAmalan,
+      prayerTimes, // Tambahkan waktu sholat ke response
     });
   } catch (error) {
     console.error("Error fetching dashboard data:", error);
