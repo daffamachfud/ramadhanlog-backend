@@ -675,7 +675,7 @@ const getDashboardMurabbiReported = async (req, res) => {
 
 const getDashboardPengawasReported = async (req, res) => {
   try {
-    console.log(`⏰ Data Dashboard Pengawas Reported}`);
+    console.log(`⏰ Data Dashboard Pengawas Reported`);
 
     const pengawasId = req.user.id; // Ambil ID murabbi dari token JWT
     const cityId = "1219"; // Kode Kota Bandung di API BAW
