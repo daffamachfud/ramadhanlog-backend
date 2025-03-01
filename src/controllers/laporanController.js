@@ -71,11 +71,11 @@ exports.getLaporanTholibByPengawas = async (req, res) => {
 // Ambil detail amalan tholib berdasarkan ID
 exports.getDetailLaporanTholib = async (req, res) => {
   try {
-    console.log("get detail laporan tholib start");
+    console.log(`⏰ Data Detail Laporan Tholib`);
 
     const { tholibId, tanggal } = req.body;
     const cityId = "1219"; // Kode Kota Bandung di API BAW
-    console.log("Body Tanggal:", tanggal);
+    console.log(`Paramter Tanggal : `,tanggal);
 
     // Ubah string menjadi Date dengan memastikan zona waktu Asia/Jakarta
     const todayMasehi = new Date(`${tanggal}T00:00:00Z`);
@@ -119,9 +119,12 @@ exports.getDetailLaporanTholib = async (req, res) => {
         });
     }
 
+    console.log(`⏰ Waktu sekarang: ${currentTime}`);
+    console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
 
     // ✅ Tentukan apakah sekarang sudah melewati Maghrib
     const isBeforeMaghrib = currentTime < maghribTime;
+    console.log(`⏰ Waktu is before magrib: ${isBeforeMaghrib}`);
 
     // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
     let tanggalMasehi = todayMasehi;
@@ -136,12 +139,32 @@ exports.getDetailLaporanTholib = async (req, res) => {
 
     let hijriDate;
 
-    // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal hijriah hari ini
-    if (isBeforeMaghrib) {
-      hijriDate = moment().format("iD iMMMM iYYYY") + " H";
-    } else {
-      hijriDate = moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
-    }
+    try {
+          const prayerResponse = await fetch(prayerApiUrl);
+          const prayerData = await prayerResponse.json();
+    
+          if (prayerData.status === true) {
+            const jadwal = prayerData.data.jadwal;
+            const maghribTime = jadwal.maghrib; // Contoh: "18:15"
+            const maghribDateTime = new Date(`${todayShalat}T${maghribTime}:00`);
+    
+            const now = new Date();
+            let hijriDate;
+    
+            // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal hijriah hari ini
+            if (now < maghribDateTime) {
+              hijriDate = moment().format("iD iMMMM iYYYY") + " H";
+            } else {
+              hijriDate = moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
+            }
+    
+            console.log(`📅 Tanggal Hijriah: ${hijriDate}`);
+          } else {
+            console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
+          }
+        } catch (error) {
+          console.error("⚠️ Error mengambil data waktu sholat:", error);
+        }
 
     const laporan = await db("amalan as a")
       .select(
