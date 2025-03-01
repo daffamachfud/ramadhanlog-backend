@@ -218,7 +218,7 @@ const getDashboardPengawas = async (req, res) => {
     // 🔹 Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
     let maghribTime;
-    
+
     try {
       const prayerResponse = await fetch(prayerApiUrl);
       const prayerData = await prayerResponse.json();
@@ -227,16 +227,23 @@ const getDashboardPengawas = async (req, res) => {
         maghribTime = prayerData.data.jadwal.maghrib; // Waktu Maghrib (HH:mm)
       } else {
         console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
-        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
+        return res
+          .status(500)
+          .json({ success: false, message: "Gagal mengambil waktu sholat" });
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data waktu sholat:", error);
-      return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: "Kesalahan server dalam mengambil waktu sholat",
+        });
     }
 
     console.log(`⏰ Waktu sekarang: ${currentTime}`);
     console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
-    
+
     // ✅ Tentukan apakah sekarang sudah melewati Maghrib
     const isBeforeMaghrib = currentTime < maghribTime;
     console.log(`🕌 Is Before Magrib`);
@@ -253,10 +260,21 @@ const getDashboardPengawas = async (req, res) => {
 
     // 1️⃣ Ambil semua anggota halaqah yang diawasi oleh pengawas (tholib & pengawas)
     const anggota = await db("users")
-      .join("relasi_halaqah_tholib", "users.id", "=", "relasi_halaqah_tholib.tholib_id")
+      .join(
+        "relasi_halaqah_tholib",
+        "users.id",
+        "=",
+        "relasi_halaqah_tholib.tholib_id"
+      )
       .join("halaqah", "relasi_halaqah_tholib.halaqah_id", "=", "halaqah.id")
       .where("halaqah.pengawas_id", pengawasId)
-      .select("users.id", "users.name", "users.role", "halaqah.id as halaqah_id", "halaqah.name as nama_halaqah");
+      .select(
+        "users.id",
+        "users.name",
+        "users.role",
+        "halaqah.id as halaqah_id",
+        "halaqah.name as nama_halaqah"
+      );
 
     const totalAnggota = anggota.length;
     const anggotaIds = anggota.map((t) => t.id);
@@ -310,9 +328,12 @@ const getDashboardPengawas = async (req, res) => {
       )
       .select("id", "name as user_name", "role");
 
+    const todayShalat = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date()); // Format YYYY-MM-DD
 
     // 6️⃣ Simpan waktu sholat
-    let prayerTimes = {}
+    let prayerTimes = {};
 
     try {
       const prayerResponse = await fetch(prayerApiUrl);
