@@ -1,4 +1,6 @@
 const db = require("../db/knex");
+const moment = require("moment-hijri");
+moment.locale("en");
 
 const getDashboardMurabbi = async (req, res) => {
   try {
@@ -83,14 +85,15 @@ const getDashboardMurabbi = async (req, res) => {
         "halaqah.name as nama_halaqah" // Alias untuk membedakan dengan users.name
       );
 
-     // 4️⃣ AMBIL DATA WAKTU SHOLAT (API Kemenag RI)
+    // 4️⃣ AMBIL DATA WAKTU SHOLAT (API Kemenag RI)
     // **🔹 Ambil data waktu sholat dari API BAW untuk Bandung (ID: 1219)**
-    const cityId = "1219"; 
-    const todayShalat = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" })
-      .format(new Date()); // Format YYYY-MM-DD
+    const cityId = "1219";
+    const todayShalat = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date()); // Format YYYY-MM-DD
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
 
-    console.log("api prayer : ",prayerApiUrl)
+    console.log("api prayer : ", prayerApiUrl);
 
     let prayerTimes = {};
 
@@ -100,19 +103,32 @@ const getDashboardMurabbi = async (req, res) => {
 
       if (prayerData.status === true) {
         const jadwal = prayerData.data.jadwal;
+        const maghribTime = jadwal.maghrib; // Contoh: "18:15"
+        const maghribDateTime = new Date(`${todayShalat}T${maghribTime}:00`);
+
+        const now = new Date();
+        let hijriDate;
+
+        // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal hijriah hari ini
+        if (now < maghribDateTime) {
+          hijriDate = moment().format("iD iMMMM iYYYY") + " H";
+        } else {
+          hijriDate = moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
+        }
         prayerTimes = {
           Subuh: jadwal.subuh,
           Dzuhur: jadwal.dzuhur,
           Ashar: jadwal.ashar,
           Maghrib: jadwal.maghrib,
           Isya: jadwal.isya,
+          HijriDate: hijriDate
         };
       } else {
         console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data waktu sholat:", error);
-    }  
+    }
 
     return res.json({
       success: true,
@@ -122,7 +138,7 @@ const getDashboardMurabbi = async (req, res) => {
         avgTilawah,
         unreportedTholib: unreportedCount,
         tholibReports,
-        prayerTimes
+        prayerTimes,
       },
     });
   } catch (error) {
@@ -134,25 +150,63 @@ const getDashboardMurabbi = async (req, res) => {
 const getDashboardPengawas = async (req, res) => {
   try {
     const pengawasId = req.user.id; // Ambil ID pengawas dari token JWT
-    const today = new Date().toISOString().split("T")[0];
+    const cityId = "1219"; // Kode Kota Bandung di API BAW
 
-    // 1. Ambil semua anggota halaqah yang diawasi oleh pengawas (tholib & pengawas)
+    // ✅ Ambil tanggal Masehi hari ini dalam format YYYY-MM-DD
+    let todayMasehi = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date());
+
+    // ✅ Ambil waktu sekarang (format HH:mm)
+    const currentTime = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23", // Format 24 jam (HH:mm)
+    }).format(new Date());
+
+    console.log(`⏰ Waktu sekarang: ${currentTime}`);
+
+    // 🔹 Ambil waktu Maghrib dari API BAW
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
+    let maghribTime;
+    
+    try {
+      const prayerResponse = await fetch(prayerApiUrl);
+      const prayerData = await prayerResponse.json();
+
+      if (prayerData.status) {
+        maghribTime = prayerData.data.jadwal.maghrib; // Waktu Maghrib (HH:mm)
+      } else {
+        console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
+        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data waktu sholat:", error);
+      return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
+    }
+
+    console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
+
+    // ✅ Tentukan apakah sekarang sudah melewati Maghrib
+    const isBeforeMaghrib = currentTime < maghribTime;
+
+    // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
+    let tanggalMasehi = todayMasehi;
+    if (!isBeforeMaghrib) {
+      const besok = new Date(todayMasehi);
+      besok.setDate(besok.getDate() + 1);
+      tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
+    }
+
+    console.log(`📅 Tanggal Masehi yang digunakan: ${tanggalMasehi}`);
+
+    // 1️⃣ Ambil semua anggota halaqah yang diawasi oleh pengawas (tholib & pengawas)
     const anggota = await db("users")
-      .join(
-        "relasi_halaqah_tholib",
-        "users.id",
-        "=",
-        "relasi_halaqah_tholib.tholib_id"
-      )
+      .join("relasi_halaqah_tholib", "users.id", "=", "relasi_halaqah_tholib.tholib_id")
       .join("halaqah", "relasi_halaqah_tholib.halaqah_id", "=", "halaqah.id")
       .where("halaqah.pengawas_id", pengawasId)
-      .select(
-        "users.id",
-        "users.name",
-        "users.role",
-        "halaqah.id as halaqah_id",
-        "halaqah.name as nama_halaqah"
-      );
+      .select("users.id", "users.name", "users.role", "halaqah.id as halaqah_id", "halaqah.name as nama_halaqah");
 
     const totalAnggota = anggota.length;
     const anggotaIds = anggota.map((t) => t.id);
@@ -166,20 +220,20 @@ const getDashboardPengawas = async (req, res) => {
           avgTilawah: 0,
           unreportedAnggota: 0,
           anggotaReports: [],
-          prayerTimes
+          prayerTimes: {},
         },
       });
     }
 
-    // 2. Hitung jumlah anggota yang sudah submit amalan harian
+    // 2️⃣ Hitung jumlah anggota yang sudah submit amalan harian
     const reportedAnggota = await db("amalan_harian")
       .distinct("user_id")
       .whereIn("user_id", anggotaIds)
-      .andWhere("tanggal", today);
+      .andWhere("tanggal", tanggalMasehi);
 
     const reportedCount = reportedAnggota.length;
 
-    // 3. Ambil ID amalan tilawah dari tabel amalan
+    // 3️⃣ Ambil ID amalan tilawah dari tabel amalan
     const tilawahAmalan = await db("amalan")
       .where("name", "Tilawah minimal 1 juz / Hari")
       .first();
@@ -187,7 +241,7 @@ const getDashboardPengawas = async (req, res) => {
     let avgTilawah = 0;
     if (tilawahAmalan) {
       const tilawahData = await db("amalan_harian")
-        .where("tanggal", today)
+        .where("tanggal", tanggalMasehi)
         .andWhere("amalan_id", tilawahAmalan.id)
         .whereIn("user_id", anggotaIds);
 
@@ -195,10 +249,10 @@ const getDashboardPengawas = async (req, res) => {
       avgTilawah = reportedCount ? totalTilawah / reportedCount : 0;
     }
 
-    // 4. Hitung jumlah anggota yang belum laporan
+    // 4️⃣ Hitung jumlah anggota yang belum laporan
     const unreportedCount = totalAnggota - reportedCount;
 
-    // 5. Ambil daftar anggota yang sudah laporan
+    // 5️⃣ Ambil daftar anggota yang sudah laporan
     const anggotaReports = await db("users")
       .whereIn(
         "id",
@@ -206,22 +260,29 @@ const getDashboardPengawas = async (req, res) => {
       )
       .select("id", "name as user_name", "role");
 
-      // 4️⃣ AMBIL DATA WAKTU SHOLAT (API Kemenag RI)
-    // **🔹 Ambil data waktu sholat dari API BAW untuk Bandung (ID: 1219)**
-    const cityId = "1219"; 
-    const todayShalat = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" })
-      .format(new Date()); // Format YYYY-MM-DD
-    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
+    // ✅ Ambil tanggal Hijriah berdasarkan Maghrib
+    let hijriDate = moment(todayMasehi, "YYYY-MM-DD").format("iD iMMMM iYYYY") + " H";
+    if (!isBeforeMaghrib) {
+      hijriDate = moment(todayMasehi, "YYYY-MM-DD").add(1, "days").format("iD iMMMM iYYYY") + " H";
+    }
 
-    console.log("api prayer : ",prayerApiUrl)
+    console.log(`📅 Tanggal Hijriah: ${hijriDate}`);
 
-    let prayerTimes = {};
+    // 6️⃣ Simpan waktu sholat
+    let prayerTimes = {
+      Subuh: "-",
+      Dzuhur: "-",
+      Ashar: "-",
+      Maghrib: "-",
+      Isya: "-",
+      HijriDate: hijriDate,
+    };
 
     try {
       const prayerResponse = await fetch(prayerApiUrl);
       const prayerData = await prayerResponse.json();
 
-      if (prayerData.status === true) {
+      if (prayerData.status) {
         const jadwal = prayerData.data.jadwal;
         prayerTimes = {
           Subuh: jadwal.subuh,
@@ -229,12 +290,11 @@ const getDashboardPengawas = async (req, res) => {
           Ashar: jadwal.ashar,
           Maghrib: jadwal.maghrib,
           Isya: jadwal.isya,
+          HijriDate: hijriDate,
         };
-      } else {
-        console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
       }
     } catch (error) {
-      console.error("⚠️ Error mengambil data waktu sholat:", error);
+      console.error("⚠️ Gagal mengambil waktu sholat:", error);
     }
 
     return res.json({
@@ -245,33 +305,77 @@ const getDashboardPengawas = async (req, res) => {
         avgTilawah,
         unreportedAnggota: unreportedCount,
         anggotaReports,
-        prayerTimes
+        prayerTimes,
       },
     });
   } catch (error) {
-    console.error("Error fetching dashboard data:", error);
+    console.error("❌ Error fetching dashboard data:", error);
     return res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 
-
 const getDashboardTholib = async (req, res) => {
   try {
     const tholibId = req.user.id; // Ambil ID murabbi dari token JWT
-    const today = new Date().toISOString().split("T")[0];
+    const cityId = "1219"; // Kode Kota Bandung di API BAW
 
-    console.log("tanggal :",today)
+    // ✅ Ambil tanggal Masehi hari ini dalam format YYYY-MM-DD
+    let todayMasehi = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date());
+
+    // ✅ Ambil waktu sekarang (format HH:mm)
+    const currentTime = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23", // Format 24 jam (HH:mm)
+    }).format(new Date());
+
+    // 🔹 Ambil waktu Maghrib dari API BAW
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
+    let maghribTime;
+    
+    try {
+      const prayerResponse = await fetch(prayerApiUrl);
+      const prayerData = await prayerResponse.json();
+
+      if (prayerData.status) {
+        maghribTime = prayerData.data.jadwal.maghrib; // Waktu Maghrib (HH:mm)
+      } else {
+        console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
+        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data waktu sholat:", error);
+      return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
+    }
+
+    console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
+
+    // ✅ Tentukan apakah sekarang sudah melewati Maghrib
+    const isBeforeMaghrib = currentTime < maghribTime;
+
+    // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
+    let tanggalMasehi = todayMasehi;
+    if (!isBeforeMaghrib) {
+      const besok = new Date(todayMasehi);
+      besok.setDate(besok.getDate() + 1);
+      tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
+    }
+
+    console.log(`📅 Tanggal Masehi yang digunakan: ${tanggalMasehi}`);
 
     // 1️⃣ RINGKASAN HARIAN
     const [{ total }] = await db("amalan_harian")
-      .where({ user_id: tholibId, tanggal: today, status: true })
+      .where({ user_id: tholibId, tanggal: tanggalMasehi, status: true })
       .count("* as total");
 
     const totalAmalan = 17;
     const percentage = ((total / totalAmalan) * 100).toFixed(2) + "%";
 
     const ringkasanHarian = {
-      date: today,
+      date: tanggalMasehi,
       completed: parseInt(total),
       total: totalAmalan,
       percentage,
@@ -313,9 +417,11 @@ const getDashboardTholib = async (req, res) => {
       return { name: hari, value: result ? parseInt(result.total) : 0 };
     });
     // 3️⃣ STATUS AMALAN
-    const allAmalan = await db("amalan").select("id", "name").orderBy('order_number', 'asc');
+    const allAmalan = await db("amalan")
+      .select("id", "name")
+      .orderBy("order_number", "asc");
     const completedAmalan = await db("amalan_harian")
-      .where({ user_id: tholibId, tanggal: today, status: true })
+      .where({ user_id: tholibId, tanggal: tanggalMasehi, status: true })
       .pluck("amalan_id");
 
     const completed = allAmalan.filter((amalan) =>
@@ -332,12 +438,12 @@ const getDashboardTholib = async (req, res) => {
 
     // 4️⃣ AMBIL DATA WAKTU SHOLAT (API Kemenag RI)
     // **🔹 Ambil data waktu sholat dari API BAW untuk Bandung (ID: 1219)**
-    const cityId = "1219"; 
-    const todayShalat = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" })
-      .format(new Date()); // Format YYYY-MM-DD
-    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
-
-    console.log("api prayer : ",prayerApiUrl)
+   
+    const todayShalat = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date()); // Format YYYY-MM-DD
+   
+    console.log("api prayer : ", prayerApiUrl);
 
     let prayerTimes = {};
 
@@ -347,12 +453,26 @@ const getDashboardTholib = async (req, res) => {
 
       if (prayerData.status === true) {
         const jadwal = prayerData.data.jadwal;
+        const maghribTime = jadwal.maghrib; // Contoh: "18:15"
+        const maghribDateTime = new Date(`${todayShalat}T${maghribTime}:00`);
+
+        const now = new Date();
+        let hijriDate;
+
+        // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal hijriah hari ini
+        if (now < maghribDateTime) {
+          hijriDate = moment().format("iD iMMMM iYYYY") + " H";
+        } else {
+          hijriDate = moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
+        }
+
         prayerTimes = {
           Subuh: jadwal.subuh,
           Dzuhur: jadwal.dzuhur,
           Ashar: jadwal.ashar,
           Maghrib: jadwal.maghrib,
           Isya: jadwal.isya,
+          HijriDate: hijriDate,
         };
       } else {
         console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
@@ -418,7 +538,7 @@ const getDashboardMurabbiReported = async (req, res) => {
       .count("* as total_amalan")
       .whereIn("user_id", tholibIds)
       .andWhere("tanggal", today)
-      .andWhere("status",true)
+      .andWhere("status", true)
       .groupBy("user_id");
 
     const reportedCount = reportedTholibs.length;
@@ -452,24 +572,63 @@ const getDashboardMurabbiReported = async (req, res) => {
 const getDashboardPengawasReported = async (req, res) => {
   try {
     const pengawasId = req.user.id; // Ambil ID murabbi dari token JWT
-    const today = new Date().toISOString().split("T")[0];
+    const cityId = "1219"; // Kode Kota Bandung di API BAW
 
-    // 1. Ambil semua tholib yang tergabung dalam halaqah murabbi
+    // ✅ Ambil tanggal Masehi hari ini dalam format YYYY-MM-DD
+    let todayMasehi = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date());
+
+    // ✅ Ambil waktu sekarang (format HH:mm)
+    const currentTime = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23", // Format 24 jam (HH:mm)
+    }).format(new Date());
+
+    console.log(`⏰ Waktu sekarang: ${currentTime}`);
+
+    // 🔹 Ambil waktu Maghrib dari API BAW
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
+    let maghribTime;
+    
+    try {
+      const prayerResponse = await fetch(prayerApiUrl);
+      const prayerData = await prayerResponse.json();
+
+      if (prayerData.status) {
+        maghribTime = prayerData.data.jadwal.maghrib; // Waktu Maghrib (HH:mm)
+      } else {
+        console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
+        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data waktu sholat:", error);
+      return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
+    }
+
+    console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
+
+    // ✅ Tentukan apakah sekarang sudah melewati Maghrib
+    const isBeforeMaghrib = currentTime < maghribTime;
+
+    // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
+    let tanggalMasehi = todayMasehi;
+    if (!isBeforeMaghrib) {
+      const besok = new Date(todayMasehi);
+      besok.setDate(besok.getDate() + 1);
+      tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
+    }
+
+    console.log(`📅 Tanggal Masehi yang digunakan: ${tanggalMasehi}`);
+
+    // 1️⃣ Ambil semua tholib yang tergabung dalam halaqah murabbi
     const tholibs = await db("users")
-      .join(
-        "relasi_halaqah_tholib",
-        "users.id",
-        "=",
-        "relasi_halaqah_tholib.tholib_id"
-      )
+      .join("relasi_halaqah_tholib", "users.id", "=", "relasi_halaqah_tholib.tholib_id")
       .join("halaqah", "relasi_halaqah_tholib.halaqah_id", "=", "halaqah.id")
       .where("halaqah.pengawas_id", pengawasId)
-      .select(
-        "users.id",
-        "users.name",
-        "halaqah.id as halaqah_id",
-        "halaqah.name as nama_halaqah"
-      );
+      .select("users.id", "users.name", "halaqah.id as halaqah_id", "halaqah.name as nama_halaqah");
 
     const totalTholib = tholibs.length;
     const tholibIds = tholibs.map((t) => t.id);
@@ -480,25 +639,23 @@ const getDashboardPengawasReported = async (req, res) => {
         data: {
           totalTholib: 0,
           reportedTholib: 0,
-          avgTilawah: 0,
-          unreportedTholib: 0,
           tholibReports: [],
         },
       });
     }
 
-    // 2. Ambil semua tholib yang sudah laporan hari ini
+    // 2️⃣ Ambil semua tholib yang sudah laporan berdasarkan tanggal setelah Maghrib
     const reportedTholibs = await db("amalan_harian")
       .select("user_id")
       .count("* as total_amalan")
       .whereIn("user_id", tholibIds)
-      .andWhere("tanggal", today)
-      .andWhere("status",true)
+      .andWhere("tanggal", tanggalMasehi)
+      .andWhere("status", true)
       .groupBy("user_id");
 
     const reportedCount = reportedTholibs.length;
 
-    // 3. Gabungkan data tholib yang sudah laporan dengan data halaqah
+    // 3️⃣ Gabungkan data tholib yang sudah laporan dengan data halaqah
     const tholibReports = reportedTholibs.map((reported) => {
       const tholibData = tholibs.find((t) => t.id === reported.user_id);
       return {
@@ -519,7 +676,7 @@ const getDashboardPengawasReported = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error fetching dashboard data:", error);
+    console.error("❌ Error fetching dashboard data:", error);
     return res.status(500).json({ success: false, message: "Server Error" });
   }
 };
@@ -571,7 +728,56 @@ const getDashboardMurabbiUnreported = async (req, res) => {
 const getDashboardPengawasUnreported = async (req, res) => {
   try {
     const pengawasId = req.user.id; // Ambil ID murabbi dari token JWT
-    const today = new Date().toISOString().split("T")[0];
+    const cityId = "1219"; // Kode Kota Bandung di API BAW
+
+    // ✅ Ambil tanggal Masehi hari ini dalam format YYYY-MM-DD
+    let todayMasehi = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    }).format(new Date());
+
+    // ✅ Ambil waktu sekarang (format HH:mm)
+    const currentTime = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23", // Format 24 jam (HH:mm)
+    }).format(new Date());
+
+    console.log(`⏰ Waktu sekarang: ${currentTime}`);
+
+    // 🔹 Ambil waktu Maghrib dari API BAW
+    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
+    let maghribTime;
+
+    try {
+      const prayerResponse = await fetch(prayerApiUrl);
+      const prayerData = await prayerResponse.json();
+
+      if (prayerData.status) {
+        maghribTime = prayerData.data.jadwal.maghrib; // Waktu Maghrib (HH:mm)
+      } else {
+        console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
+        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data waktu sholat:", error);
+      return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
+    }
+
+    console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
+
+    // ✅ Tentukan apakah sekarang sudah melewati Maghrib
+    const isBeforeMaghrib = currentTime < maghribTime;
+
+    // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
+    let tanggalMasehi = todayMasehi;
+    if (!isBeforeMaghrib) {
+      const besok = new Date(todayMasehi);
+      besok.setDate(besok.getDate() + 1);
+      tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
+    }
+
+    console.log(`📅 Tanggal Masehi yang digunakan: ${tanggalMasehi}`);
 
     // 1. Ambil semua tholib yang tergabung dalam halaqah murabbi
     const tholibs = await db("users")
@@ -596,7 +802,7 @@ const getDashboardPengawasUnreported = async (req, res) => {
         "user_id",
         tholibs.map((t) => t.id)
       )
-      .andWhere("tanggal", today)
+      .andWhere("tanggal", tanggalMasehi)
       .groupBy("user_id")
       .pluck("user_id"); // Ambil hanya array ID yang sudah laporan
 
