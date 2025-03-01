@@ -71,9 +71,10 @@ exports.getLaporanTholibByPengawas = async (req, res) => {
 // Ambil detail amalan tholib berdasarkan ID
 exports.getDetailLaporanTholib = async (req, res) => {
   try {
+    console.log("get detail laporan tholib start");
+
     const { tholibId, tanggal } = req.body;
     const cityId = "1219"; // Kode Kota Bandung di API BAW
-    console.log("Body Tholib ID:", tholibId);
     console.log("Body Tanggal:", tanggal);
 
     // Ubah string menjadi Date dengan memastikan zona waktu Asia/Jakarta
