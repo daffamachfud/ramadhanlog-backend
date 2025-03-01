@@ -675,6 +675,8 @@ const getDashboardMurabbiReported = async (req, res) => {
 
 const getDashboardPengawasReported = async (req, res) => {
   try {
+    console.log(`⏰ Data Dashboard Pengawas Reported}`);
+
     const pengawasId = req.user.id; // Ambil ID murabbi dari token JWT
     const cityId = "1219"; // Kode Kota Bandung di API BAW
 
@@ -691,7 +693,6 @@ const getDashboardPengawasReported = async (req, res) => {
       hourCycle: "h23", // Format 24 jam (HH:mm)
     }).format(new Date());
 
-    console.log(`⏰ Waktu sekarang: ${currentTime}`);
 
     // 🔹 Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
@@ -712,10 +713,13 @@ const getDashboardPengawasReported = async (req, res) => {
       return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
     }
 
+    console.log(`⏰ Waktu sekarang: ${currentTime}`);
     console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
 
     // ✅ Tentukan apakah sekarang sudah melewati Maghrib
     const isBeforeMaghrib = currentTime < maghribTime;
+
+    console.log(`🕌 Is Before Magrib: ${isBeforeMaghrib}`);
 
     // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
     let tanggalMasehi = todayMasehi;
@@ -724,7 +728,6 @@ const getDashboardPengawasReported = async (req, res) => {
       besok.setDate(besok.getDate() + 1);
       tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
     }
-
 
     // 1️⃣ Ambil semua tholib yang tergabung dalam halaqah murabbi
     const tholibs = await db("users")
