@@ -57,7 +57,7 @@ const catatAmalanHarian = async (req, res) => {
     if (currentTime >= maghribTime) {
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      today = formatter.format(tomorrow);
+      todayMasehi = formatter.format(tomorrow);
       console.log("🌙 Sudah lewat Maghrib, gunakan tanggal besok:", today);
     }
 
@@ -87,7 +87,7 @@ const catatAmalanHarian = async (req, res) => {
         .where({
           user_id,
           amalan_id: id,
-          tanggal: today,
+          tanggal: todayMasehi,
         })
         .first();
 
@@ -112,7 +112,7 @@ const catatAmalanHarian = async (req, res) => {
         await db("amalan_harian").insert({
           user_id,
           amalan_id: id,
-          tanggal: today,
+          tanggal: todayMasehi,
           status: updatedStatus,
           nilai: nilai || "",
         });
@@ -127,7 +127,7 @@ const catatAmalanHarian = async (req, res) => {
             .where({
               user_id,
               amalan_id: id,
-              tanggal: today,
+              tanggal: todayMasehi,
             })
             .update({
               status: updatedStatus,
