@@ -79,9 +79,10 @@ exports.getDetailLaporanTholib = async (req, res) => {
         "a.id as amalan_id",
         "a.name as nama_amalan",
         "a.type as type",
+        "a.description as description",
+        "ah.nilai as nilai",
         "ah.id as laporan_id",
         "ah.tanggal",
-        "ah.nilai",
         db.raw(`
           CASE 
             WHEN ah.status IS NULL THEN false
