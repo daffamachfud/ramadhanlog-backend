@@ -7,65 +7,30 @@ moment.locale("en");
 const catatAmalanHarian = async (req, res) => {
   try {
     const user_id = req.user.id;
-    const { amalan } = req.body;
+    const { amalan, hijriDate } = req.body;
 
-    console.log("Ambil catatan amalan harian");
+    console.log("Catat Amalan Harian");
 
     if (!amalan || !Array.isArray(amalan) || amalan.length === 0) {
       return res.status(400).json({ message: "Daftar amalan tidak boleh kosong" });
     }
 
-    // ✅ Ambil waktu saat ini di zona WIB (Asia/Jakarta)
-    let todayMasehi = new Intl.DateTimeFormat("fr-CA", {
-      timeZone: "Asia/Jakarta",
-    }).format(new Date());
-
-    const currentTime = new Intl.DateTimeFormat("id-ID", {
-      timeZone: "Asia/Jakarta",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23", // Format 24 jam (HH:mm)
-    }).format(new Date());
-
-    console.log("🕰️ Waktu sekarang:", currentTime);
-
-    // ✅ Ambil waktu Maghrib dari API waktu sholat BAW (Bandung ID: 1219)
-    const cityId = "1219";
-    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
-
-    console.log("🌎 API Waktu Sholat:", prayerApiUrl);
-
-    let maghribTime = "18:00"; // Default jika gagal mengambil API
-
-    try {
-      const prayerResponse = await fetch(prayerApiUrl);
-      const prayerData = await prayerResponse.json();
-
-      if (prayerData.status === true) {
-        const jadwal = prayerData.data.jadwal;
-        maghribTime = jadwal.maghrib; // Contoh: "18:15"
-      } else {
-        console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
-      }
-    } catch (error) {
-      console.error("⚠️ Error mengambil data waktu sholat:", error);
+    if (!hijriDate) {
+      return res.status(400).json({ message: "Tanggal Hijriah wajib dikirim dari frontend" });
     }
 
-    console.log("🌅 Waktu Maghrib dari API:", maghribTime);
+    // ✅ Pastikan semua waktu menggunakan zona WIB (Asia/Jakarta)
+    const formatter = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" });
+    const tanggalMasehi = formatter.format(new Date()); // Contoh: "2025-03-01"
 
-    // ✅ Jika waktu sekarang lebih dari Maghrib, gunakan tanggal besok
-    if (currentTime >= maghribTime) {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      today = formatter.format(tomorrow);
-      console.log("🌙 Sudah lewat Maghrib, gunakan tanggal besok:", today);
-    }
+    // ✅ Konversi tanggal Hijriah ke Masehi
 
-    // ✅ Ambil daftar ID amalan dari request
+    console.log("📆 Tanggal Masehi (Setelah Fix):", tanggalMasehi);
+    console.log("🌙 Tanggal Hijriah:", hijriDate);
+
+    // ✅ Ambil daftar ID amalan yang dikirim dari frontend
     const amalanIds = amalan.map((item) => item.id);
-    const amalanList = await db("amalan")
-      .whereIn("id", amalanIds)
-      .select("id", "name");
+    const amalanList = await db("amalan").whereIn("id", amalanIds).select("id", "name");
 
     if (amalanList.length === 0) {
       return res.status(404).json({ message: "Amalan tidak ditemukan" });
@@ -82,16 +47,7 @@ const catatAmalanHarian = async (req, res) => {
         continue;
       }
 
-      // ✅ Cek apakah data sudah ada untuk tanggal ini
-      const existingAmalan = await db("amalan_harian")
-        .where({
-          user_id,
-          amalan_id: id,
-          tanggal: today,
-        })
-        .first();
-
-      // ✅ Normalisasi nilai ke lowercase
+      // ✅ Normalisasi nilai ke lowercase untuk perbandingan
       const nilaiLower = nilai ? nilai.toLowerCase() : "";
       let updatedStatus = done;
 
@@ -99,35 +55,53 @@ const catatAmalanHarian = async (req, res) => {
 
       // ✅ Aturan khusus untuk beberapa amalan tertentu
       if (
-        (amalanExists.name.toLowerCase() === "sholat sunnah malam" && (nilaiLower === "tidak shalat" || nilaiLower === "")) ||
-        (amalanExists.name.toLowerCase() === "jaga waktu syuruq" && (nilaiLower === "tidak melakukan" || nilaiLower === "")) ||
-        (amalanExists.name.toLowerCase() === "sholat dhuha" && (nilaiLower === "tidak shalat" || nilaiLower === "")) ||
-        (amalanExists.name.toLowerCase() === "shalat rawatib")
+        (amalanExists.name.toLowerCase() === "sholat sunnah malam" &&
+          (nilaiLower === "tidak shalat" || nilaiLower === "")) ||
+        (amalanExists.name.toLowerCase() === "jaga waktu syuruq" &&
+          (nilaiLower === "tidak melakukan" || nilaiLower === "")) ||
+        (amalanExists.name.toLowerCase() === "sholat dhuha" &&
+          (nilaiLower === "tidak shalat" || nilaiLower === "")) ||
+        amalanExists.name.toLowerCase() === "shalat rawatib"
       ) {
         updatedStatus = false;
       }
+
+      // ✅ Cek apakah data sudah ada untuk tanggal ini
+      const existingAmalan = await db("amalan_harian")
+        .where({
+          user_id,
+          amalan_id: id,
+          hijri_date: hijriDate, // ✅ Pastikan format hijri_date konsisten
+        })
+        .first();
 
       if (!existingAmalan) {
         // ✅ Jika belum ada, insert data baru
         await db("amalan_harian").insert({
           user_id,
           amalan_id: id,
-          tanggal: today,
+          tanggal: tanggalMasehi,
+          hijri_date: hijriDate,
           status: updatedStatus,
           nilai: nilai || "",
         });
+
+        console.log(`✅ Amalan ID ${id} dicatat baru.`);
       } else {
         console.log(`✅ Amalan ID ${id} sudah ada, cek apakah perlu update...`);
 
         // ✅ Cek apakah status atau nilai berubah
-        if (existingAmalan.status !== updatedStatus || existingAmalan.nilai.toLowerCase() !== nilaiLower) {
+        if (
+          existingAmalan.status !== updatedStatus ||
+          existingAmalan.nilai.toLowerCase() !== nilaiLower
+        ) {
           console.log(`🔄 Update amalan ID ${id}, karena status atau nilai berubah.`);
 
           await db("amalan_harian")
             .where({
               user_id,
               amalan_id: id,
-              tanggal: today,
+              hijri_date: hijriDate,
             })
             .update({
               status: updatedStatus,
@@ -173,18 +147,25 @@ const getAllAmalan = async (req, res) => {
 
 const getAmalanHarian = async (req, res) => {
   try {
+    console.log("📌 Get Amalan Harian");
+    console.log("🔍 Mengambil amalan harian dari database...");
     const userId = req.user.id;
     const cityId = "1219"; // Kode Kota Bandung di API BAW
 
-    // ✅ Ambil tanggal Masehi hari ini dalam format YYYY-MM-DD (zona WIB)
+    // ✅ Ambil parameter hijriDate dari frontend
+    let { hijriDate } = req.query; // Ambil dari query parameter
+    
+    // ✅ Pastikan semua waktu menggunakan zona WIB (Asia/Jakarta)
     const formatter = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" });
     const todayMasehi = formatter.format(new Date()); // Contoh: "2025-03-01"
 
-    // ✅ Ambil waktu sekarang (jam:menit) dalam zona WIB
-    const currentHour = new Date().getHours();
-    const currentMinute = new Date().getMinutes();
-    const currentTime = `${currentHour.toString().padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}`;
+    console.log("⏰ Tanggal Masehi: ", todayMasehi);
+
+    // ✅ Ambil waktu sekarang dalam zona WIB
     
+    const now = new Date();
+    let currentTime = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
+
     // ✅ Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
     let maghribTime;
@@ -197,51 +178,81 @@ const getAmalanHarian = async (req, res) => {
         maghribTime = prayerData.data.jadwal.maghrib; // Contoh: "18:15"
       } else {
         console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
-        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
+        return res
+          .status(500)
+          .json({ success: false, message: "Gagal mengambil waktu sholat" });
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data waktu sholat:", error);
-      return res.status(500).json({ success: false, message: "Kesalahan server dalam mengambil waktu sholat" });
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: "Kesalahan server dalam mengambil waktu sholat",
+        });
     }
 
+    console.log(`⏰ Waktu sekarang (string): "${currentTime}"`);
     console.log(`⏰ Waktu sekarang: ${currentTime}`);
     console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
 
-    // ✅ Tentukan apakah sekarang sudah melewati Maghrib
-    const [currentHourNum, currentMinuteNum] = currentTime.split(":").map(Number);
-    const [maghribHourNum, maghribMinuteNum] = maghribTime.split(":").map(Number);
+    // Perbaikan: Ganti pemisah titik dengan titik dua
+    currentTime = currentTime.replace(".", ":");
 
-    const isAfterMaghrib = 
-      currentHourNum > maghribHourNum || 
-      (currentHourNum === maghribHourNum && currentMinuteNum >= maghribMinuteNum);
+     // Konversi waktu ke menit
+     const [currentHour, currentMinute] = currentTime.split(":").map(Number);
+     const [maghribHour, maghribMinute] = maghribTime.split(":").map(Number);
+ 
+     const currentTimeInMinutes = currentHour * 60 + currentMinute;
+     const maghribTimeInMinutes = maghribHour * 60 + maghribMinute;
+ 
+     console.log(`⏰ Waktu sekarang (menit): ${currentTimeInMinutes}`);
+     console.log(` Waktu Maghrib (menit): ${maghribTimeInMinutes}`);
+ 
+     // Penentuan isAfterMaghrib
+     const isAfterMaghrib = currentTimeInMinutes >= maghribTimeInMinutes;
+     console.log(` Is After Maghrib: ${isAfterMaghrib}`);
 
-    // ✅ Jika sudah lewat Maghrib, gunakan tanggal Masehi besok
-    let tanggalMasehi = todayMasehi;
+    // ✅ Tentukan currentHijriDate (acuan tanggal Hijriah hari ini)
+    let currentHijriDate = moment(todayMasehi, "YYYY-MM-DD").format("iD iMMMM iYYYY");
     if (isAfterMaghrib) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tanggalMasehi = formatter.format(tomorrow);
+      currentHijriDate = moment(todayMasehi, "YYYY-MM-DD").add(1, "days").format("iD iMMMM iYYYY");
     }
 
-    // ✅ Tentukan tanggal Hijriah yang sesuai
-    let hijriDate = moment(tanggalMasehi, "YYYY-MM-DD").format("iD iMMMM iYYYY") + " H";
-    if (isAfterMaghrib) {
-          hijriDate = moment(todayMasehi, "YYYY-MM-DD").add(1, "days").format("iD iMMMM iYYYY") + " H";
+    console.log(`📅 currentHijriDate (Acuan Hari Ini): ${currentHijriDate}`);
+
+    // ✅ Jika hijriDate tidak diberikan dari frontend, gunakan currentHijriDate
+    if (!hijriDate) {
+      hijriDate = currentHijriDate;
     }
-    
-    console.log(`📅 Tanggal Masehi: ${tanggalMasehi}`);
-    console.log(`📅 Tanggal Hijriah: ${hijriDate}`);
+
+    console.log(`📅 Menggunakan hijriDate untuk query: ${hijriDate}`);
+
+    // ✅ Cari tanggal Masehi berdasarkan hijriDate (jika diberikan dari frontend)
+    let tanggalMasehi = null;
+    const masehiQuery = await db("amalan_harian")
+      .select("tanggal")
+      .where("hijri_date", hijriDate)
+      .first();
+
+    if (masehiQuery) {
+      tanggalMasehi = masehiQuery.tanggal;
+    } else {
+      console.warn(`⚠️ Tidak ditemukan tanggal Masehi untuk hijriDate: ${hijriDate}`);
+    }
+
+    console.log(`📅 tanggalMasehi yang digunakan: ${tanggalMasehi || "tidak ditemukan"}`);
 
     // ✅ Ambil semua amalan
     const daftarAmalan = await db("amalan")
       .select("id", "name", "description", "type", "options", "parent_id")
       .orderBy("order_number", "asc");
 
-    // ✅ Ambil amalan yang sudah dicatat user berdasarkan tanggal yang benar
+    // ✅ Ambil amalan yang sudah dicatat berdasarkan hijri_date
     const amalanHarian = await db("amalan_harian")
       .select("amalan_id", "status", "nilai")
       .where("user_id", userId)
-      .andWhere("tanggal", tanggalMasehi);
+      .andWhere("hijri_date", hijriDate); // Hanya gunakan hijri_date
 
     // Ubah hasil menjadi objek untuk pencocokan cepat
     const amalanDicatat = {};
@@ -266,13 +277,16 @@ const getAmalanHarian = async (req, res) => {
 
     res.json({
       success: true,
-      hijriDate,    // ✅ Tanggal Hijriah sesuai waktu Maghrib
-      tanggalMasehi, // ✅ Tanggal Masehi juga berubah setelah Maghrib
+      hijriDate,        // ✅ Tanggal Hijriah yang digunakan untuk query
+      currentHijriDate, // ✅ Acuan hari ini masuk ke tanggal Hijriah berapa
+      tanggalMasehi,    // ✅ Tanggal Masehi yang ditemukan untuk hijriDate
       data: hasil,
     });
   } catch (error) {
     console.error("❌ Error mengambil amalan harian:", error);
-    res.status(500).json({ success: false, message: "Gagal mengambil amalan harian" });
+    res
+      .status(500)
+      .json({ success: false, message: "Gagal mengambil amalan harian" });
   }
 };
 
