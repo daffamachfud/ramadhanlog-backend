@@ -94,13 +94,30 @@ exports.getDetailLaporanTholib = async (req, res) => {
     // 🔹 Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
     let maghribTime;
+    let hijriDate;
+    let hijriDateForDb;
 
     try {
       const prayerResponse = await fetch(prayerApiUrl);
       const prayerData = await prayerResponse.json();
 
       if (prayerData.status) {
-        maghribTime = prayerData.data.jadwal.maghrib; // Waktu Maghrib (HH:mm)
+        const jadwal = prayerData.data.jadwal;
+        const maghribTime = jadwal.maghrib; // Contoh: "18:15"
+        const maghribDateTime = new Date(`${todayShalat}T${maghribTime}:00`);
+        const now = new Date();
+        // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal hijriah hari ini
+        if (now < maghribDateTime) {
+          hijriDate = moment().format("iD iMMMM iYYYY") + " H";
+          hijriDateForDb = moment().format("iD iMMMM iYYYY");
+        } else {
+          hijriDate = moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
+          hijriDateForDb = moment().add(1, "days").format("iD iMMMM iYYYY");
+        }
+
+        console.log(`📅 Tanggal Hijriah: ${hijriDate}`);
+        console.log(`📅 Tanggal Hijriah DB: ${hijriDateForDb}`);
+        
       } else {
         console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
         return res
@@ -127,42 +144,12 @@ exports.getDetailLaporanTholib = async (req, res) => {
     // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
     let tanggalMasehi = todayShalat;
     if (!isBeforeMaghrib) {
-      const besok = new Date(todayMasehi);
+      const besok = new Date(todayShalat);
       besok.setDate(besok.getDate() + 1);
       tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
     }
 
     console.log(`📅 Tanggal Masehi yang digunakan: ${tanggalMasehi}`);
-
-    let hijriDate;
-
-    try {
-          const prayerResponse = await fetch(prayerApiUrl);
-          const prayerData = await prayerResponse.json();
-    
-          if (prayerData.status === true) {
-            const jadwal = prayerData.data.jadwal;
-            const maghribTime = jadwal.maghrib; // Contoh: "18:15"
-            const maghribDateTime = new Date(`${todayShalat}T${maghribTime}:00`);
-    
-            const now = new Date();
-            let hijriDate;
-    
-            // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal hijriah hari ini
-            if (now < maghribDateTime) {
-              hijriDate = moment().format("iD iMMMM iYYYY") + " H";
-            } else {
-              hijriDate = moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
-            }
-    
-            console.log(`📅 Tanggal Hijriah: ${hijriDate}`);
-          } else {
-            console.error("⚠️ Gagal mengambil waktu sholat:", prayerData);
-          }
-        } catch (error) {
-          console.error("⚠️ Error mengambil data waktu sholat:", error);
-        }
-
     const laporan = await db("amalan as a")
       .select(
         "a.id as amalan_id",
@@ -182,7 +169,7 @@ exports.getDetailLaporanTholib = async (req, res) => {
       .leftJoin("amalan_harian as ah", function () {
         this.on("a.id", "=", "ah.amalan_id")
           .andOn("ah.user_id", "=", db.raw("?", [tholibId]))
-          .andOn("ah.tanggal", "=", db.raw("?", [tanggalMasehi]));
+          .andOn("ah.hijri_date", "=", db.raw("?", [hijriDateForDb]));
       })
       .orderBy("a.order_number", "asc");
 
