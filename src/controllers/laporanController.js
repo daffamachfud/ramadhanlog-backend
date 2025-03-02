@@ -77,9 +77,7 @@ exports.getDetailLaporanTholib = async (req, res) => {
     const cityId = "1219"; // Kode Kota Bandung di API BAW
     console.log(`Paramter Tanggal : `,tanggal);
 
-    // Ubah string menjadi Date dengan memastikan zona waktu Asia/Jakarta
-    const todayMasehi = new Date(`${tanggal}T00:00:00Z`);
-
+    // Ubah string menjadi Date dengan memastikan zona waktu Asia/Jakart
     // ✅ Ambil tanggal Masehi hari ini dalam format YYYY-MM-DD
     let todayShalat = new Intl.DateTimeFormat("fr-CA", {
       timeZone: "Asia/Jakarta",
@@ -127,7 +125,7 @@ exports.getDetailLaporanTholib = async (req, res) => {
     console.log(`⏰ Waktu is before magrib: ${isBeforeMaghrib}`);
 
     // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
-    let tanggalMasehi = todayMasehi;
+    let tanggalMasehi = todayShalat;
     if (!isBeforeMaghrib) {
       const besok = new Date(todayMasehi);
       besok.setDate(besok.getDate() + 1);
