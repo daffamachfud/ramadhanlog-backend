@@ -360,7 +360,6 @@ const getDashboardTholib = async (req, res) => {
 
         prayerTimes = {
           Subuh: jadwal.subuh,
-          Terbit: jadwal.terbit,
           Dzuhur: jadwal.dzuhur,
           Ashar: jadwal.ashar,
           Maghrib: jadwal.maghrib,
