@@ -3,6 +3,7 @@ const {
   getLaporanTholib,
   getLaporanTholibByPengawas,
   getDetailLaporanTholib,
+  getDetailLaporanTholibMingguan,
 } = require("../controllers/laporanController");
 const { verifyToken } = require("../middlewares/authMiddleware");
 
@@ -14,5 +15,6 @@ router.get("/pengawas",verifyToken, getLaporanTholibByPengawas)
 
 // Ambil detail amalan tholib berdasarkan ID tholib
 router.post("/detail", verifyToken, getDetailLaporanTholib);
+router.post("/detail/week", verifyToken, getDetailLaporanTholibMingguan)
 
 module.exports = router;
