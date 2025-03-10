@@ -40,7 +40,7 @@ exports.getLaporanTholib = async (req, res) => {
 
 exports.getLaporanTholibByPengawas = async (req, res) => {
   try {
-    const { name } = req.query;
+    const { nama } = req.query;
     const pengawasId = req.user.id;
 
     let query = db("users as u")
@@ -49,14 +49,16 @@ exports.getLaporanTholibByPengawas = async (req, res) => {
       .where("h.pengawas_id", pengawasId)
       .select("u.id", "u.name", "h.name as halaqah");
 
-    const values = [];
-
     // Filter jika nama tholib diberikan
-    if (name) {
-      query = query.where("u.name", "like", `%${name}%`);
+    console.log("parameter laporan nama:",nama)
+    if (nama) {
+      query = query.where("u.name", "like", `%${nama}%`);
     }
 
     const laporan = await query;
+
+    console.log("hasil laporan backend:",laporan)
+
 
     res.json(laporan);
   } catch (error) {
@@ -169,7 +171,7 @@ exports.getDetailLaporanTholib = async (req, res) => {
       .leftJoin("amalan_harian as ah", function () {
         this.on("a.id", "=", "ah.amalan_id")
           .andOn("ah.user_id", "=", db.raw("?", [tholibId]))
-          .andOn("ah.hijri_date", "=", db.raw("?", [hijriDateForDb]));
+          .andOn("ah.hijri_date", "=", db.raw("?", [tanggal]));
       })
       .orderBy("a.order_number", "asc");
 
@@ -179,6 +181,133 @@ exports.getDetailLaporanTholib = async (req, res) => {
     console.error("Error get detail laporan tholib:", error);
     res.status(500).json({
       message: "Terjadi kesalahan saat mengambil detail laporan tholib",
+      error: error.message,
+    });
+  }
+};
+
+exports.getDetailLaporanTholibMingguan = async (req, res) => {
+  try {
+    console.log("📊 Mengambil laporan mingguan Tholib...");
+
+    const { tholibId } = req.body;
+
+    // 🔹 Ambil tahun Hijriah terbaru
+    let latestHijriYear = moment().format("iYYYY");
+
+    // 🔹 Paksa tanggal menjadi 1 Ramadhan tahun ini
+    let startHijriDate = `1 Ramadhan 1446`;
+    let endHijriDate = `7 Ramadhan 1446`;
+
+    console.log(`🔹 Rentang Tanggal Hijriah: ${startHijriDate} - ${endHijriDate}`);
+
+    // 🔹 Ambil total amalan per hari dari database
+    const results = await db("amalan_harian")
+      .select("hijri_date", db.raw("COUNT(*) as total"))
+      .where({ user_id: tholibId, status: true })
+      .andWhereBetween("hijri_date", [startHijriDate, endHijriDate])
+      .groupBy("hijri_date")
+      .orderBy("hijri_date", "asc");
+
+    console.log("📊 Hasil Mingguan:", results);
+
+    // 🔹 Format ulang hasil agar semua tanggal dari 1-7 Ramadhan selalu ada
+    let summary = [
+      { name: "1 Ramadhan", value: 0 },
+      { name: "2 Ramadhan", value: 0 },
+      { name: "3 Ramadhan", value: 0 },
+      { name: "4 Ramadhan", value: 0 },
+      { name: "5 Ramadhan", value: 0 },
+      { name: "6 Ramadhan", value: 0 },
+      { name: "7 Ramadhan", value: 0 },
+    ];
+    
+    // Update nilai berdasarkan hasil API
+    results.forEach(item => {
+      let hijriWithoutYear = item.hijri_date.split(" ").slice(0, 2).join(" "); // "X Ramadhan"
+      let found = summary.find(s => s.name === hijriWithoutYear);
+      if (found) found.value = item.total;
+    });
+
+    console.log("📊 Ringkasan Mingguan:", summary);
+
+    // 🔹 Ambil semua amalan dan statusnya dalam rentang 1-7 Ramadhan
+    const amalanResults = await db("amalan as a")
+      .select(
+        "a.id as amalan_id",
+        "a.name as nama_amalan",
+        "a.type as type",
+        "a.description as description",
+        "ah.nilai as nilai",
+        "ah.hijri_date as hijri_date",
+        db.raw(`
+          CASE 
+            WHEN ah.status IS NULL THEN false
+            ELSE ah.status
+          END as status
+        `)
+      )
+      .leftJoin("amalan_harian as ah", function () {
+        this.on("a.id", "=", "ah.amalan_id").andOn("ah.user_id", "=", db.raw("?", [tholibId]));
+      })
+      .whereBetween("ah.hijri_date", [startHijriDate, endHijriDate])
+      .orderBy("a.order_number", "asc");
+
+    console.log("📊 Data Amalan:", amalanResults);
+
+    // 🔹 Format data agar setiap hari memiliki daftar amalan yang sama
+    let amalanPerHari = {
+      "1 Ramadhan": [],
+      "2 Ramadhan": [],
+      "3 Ramadhan": [],
+      "4 Ramadhan": [],
+      "5 Ramadhan": [],
+      "6 Ramadhan": [],
+      "7 Ramadhan": [],
+    };
+
+    // **Update berdasarkan hasil API**
+    amalanResults.forEach(item => {
+      let hijriWithoutYear = item.hijri_date.split(" ").slice(0, 2).join(" "); // "X Ramadhan"
+
+      if (amalanPerHari[hijriWithoutYear]) {
+        amalanPerHari[hijriWithoutYear].push(item);
+      }
+    });
+
+    // **Jika ada tanggal yang kosong, isi dengan daftar amalan default**
+    for (let date in amalanPerHari) {
+      if (amalanPerHari[date].length === 0) {
+        amalanPerHari[date] = amalanResults
+          .filter(a => a.hijri_date === `${date} 1446`) // Tetap pakai filter
+          .map(a => ({
+            ...a,
+            nilai: a.nilai || null,
+            status: a.status || false,
+          }));
+
+        // **Jika masih kosong, ambil default dari tabel amalan**
+        if (amalanPerHari[date].length === 0) {
+          amalanPerHari[date] = await db("amalan")
+            .select("id as amalan_id", "name as nama_amalan", "type", "description")
+            .orderBy("order_number", "asc")
+            .then((amalanList) =>
+              amalanList.map((a) => ({
+                ...a,
+                hijri_date: `${date} 1446`,
+                nilai: null,
+                status: false,
+              }))
+            );
+        }
+      }
+    }
+
+    return res.json({ ringkasan_mingguan: summary, amalan: amalanPerHari });
+  } catch (error) {
+    console.error("⚠️ Error getDetailLaporanTholibMingguan:", error);
+    res.status(500).json({
+      message: "Terjadi kesalahan saat mengambil laporan mingguan",
       error: error.message,
     });
   }
