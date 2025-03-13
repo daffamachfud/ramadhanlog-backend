@@ -389,7 +389,7 @@ const getDashboardTholib = async (req, res) => {
       .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
       .count("* as total");
 
-    const totalAmalan = 21;
+    const totalAmalan = 20;
     const percentage = ((total / totalAmalan) * 100).toFixed(2) + "%";
 
     const ringkasanHarian = {
@@ -400,6 +400,11 @@ const getDashboardTholib = async (req, res) => {
     };
 
     // 2️⃣ DATA PERMINGGU (berdasarkan Hijri Date)
+    // 🔹 **Hitung rentang data untuk 30 hari Ramadhan**
+    const fullDateRange = [];
+    for (let i = 1; i <= 30; i++) {
+      fullDateRange.push(`${i} Ramadhan 1446`);
+    }
 
     // Ambil 7 hari terakhir dari hijri_date
     const results = await db("amalan_harian")
@@ -408,19 +413,23 @@ const getDashboardTholib = async (req, res) => {
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc"); // Urutkan berdasarkan hijri_date
 
-    const dataPerminggu = results
-      .filter((item) => parseInt(item.total) > 0)
-      .map((item) => {
-        const hijriParts = item.hijri_date.split(" "); // Pisahkan "1 Ramadhan 1446"
-        const hijriWithoutYear = `${hijriParts[0]} ${hijriParts[1]}`; // Ambil "1 Ramadhan"
+    // 🔹 Urutkan hasil berdasarkan tanggal Hijriah
+    const sortedResults = results.sort((a, b) => {
+      return (
+        parseInt(a.hijri_date.split(" ")[0]) -
+        parseInt(b.hijri_date.split(" ")[0])
+      );
+    });
 
-        return {
-          name: hijriWithoutYear,
-          value: parseInt(item.total),
-        };
-      });
+    // 🔹 Mapping data ke dalam array lengkap (1 - 30 Ramadhan)
+    const dataPerminggu = fullDateRange.map((date) => {
+      const existingData = sortedResults.find((row) => row.hijri_date === date);
+      return {
+        hijri_date: date,
+        total: existingData ? parseInt(existingData.total) : 0, // Jika tidak ada data, set total = 0
+      };
+    });
 
-   
     console.log("📊 Data Perminggu (Hijri):", dataPerminggu);
 
     // 3️⃣ STATUS AMALAN
@@ -446,7 +455,10 @@ const getDashboardTholib = async (req, res) => {
     // 🔥 RESPONSE FINAL
     res.json({
       ringkasanHarian,
-      dataPerminggu,
+      line_chart: dataPerminggu.map((item) => ({
+        name: `${item.hijri_date}`,
+        value: item.total,
+      })),
       statusAmalan,
       prayerTimes, // Tambahkan waktu sholat ke response
     });
