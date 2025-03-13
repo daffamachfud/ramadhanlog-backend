@@ -226,8 +226,10 @@ console.log("🔥 Data Amalan untuk 30 Hari Ramadhan:", laporan);
       }
     });
 
-    // 🔹 Konversi kembali ke array
-    response.amalan_list = Object.values(groupedAmalan);
+    // 🔹 Konversi kembali ke array, sambil menghapus "Shalat Rawatib"
+response.amalan_list = Object.values(groupedAmalan).filter(
+  (amalan) => amalan.nama_amalan !== "Shalat Rawatib"
+);
     
 
     console.log("📊 Data Response:", response);
@@ -433,7 +435,7 @@ exports.getAmalanLaporanTholib = async (req, res) => {
 
     if (!selectedHijriDateQuery.match(/\d{4}$/)) {
       selectedHijriDateQuery += " 1446";
-  }
+    }
 
     // 🔹 **Hitung rentang data untuk 30 hari Ramadhan**
     const fullDateRange = [];
@@ -441,31 +443,31 @@ exports.getAmalanLaporanTholib = async (req, res) => {
       fullDateRange.push(`${i} Ramadhan 1446`);
     }
 
-// 🔹 Query database untuk mendapatkan amalan harian
-const results = await db("amalan_harian")
-  .select("hijri_date", db.raw("COUNT(*) as total"))
-  .where({ user_id: tholibId, status: true })
-  .groupBy("hijri_date")
-  .orderBy("hijri_date", "asc");
+    // 🔹 Query database untuk mendapatkan amalan harian
+    const results = await db("amalan_harian")
+      .select("hijri_date", db.raw("COUNT(*) as total"))
+      .where({ user_id: tholibId, status: true })
+      .groupBy("hijri_date")
+      .orderBy("hijri_date", "asc");
 
-// 🔹 Urutkan hasil berdasarkan tanggal Hijriah
-const sortedResults = results.sort((a, b) => {
-  return (
-    parseInt(a.hijri_date.split(" ")[0]) -
-    parseInt(b.hijri_date.split(" ")[0])
-  );
-});
+    // 🔹 Urutkan hasil berdasarkan tanggal Hijriah
+    const sortedResults = results.sort((a, b) => {
+      return (
+        parseInt(a.hijri_date.split(" ")[0]) -
+        parseInt(b.hijri_date.split(" ")[0])
+      );
+    });
 
-// 🔹 Mapping data ke dalam array lengkap (1 - 30 Ramadhan)
-const laporan = fullDateRange.map((date) => {
-  const existingData = sortedResults.find((row) => row.hijri_date === date);
-  return {
-    hijri_date: date,
-    total: existingData ? parseInt(existingData.total) : 0, // Jika tidak ada data, set total = 0
-  };
-});
+    // 🔹 Mapping data ke dalam array lengkap (1 - 30 Ramadhan)
+    const laporan = fullDateRange.map((date) => {
+      const existingData = sortedResults.find((row) => row.hijri_date === date);
+      return {
+        hijri_date: date,
+        total: existingData ? parseInt(existingData.total) : 0, // Jika tidak ada data, set total = 0
+      };
+    });
 
-console.log("🔥 Data Amalan untuk 30 Hari Ramadhan:", laporan);
+    console.log("🔥 Data Amalan untuk 30 Hari Ramadhan:", laporan);
 
     // 🔹 Ambil daftar amalan berdasarkan tanggal yang dipilih
     const amalanList = await db("amalan as a")
@@ -489,12 +491,9 @@ console.log("🔥 Data Amalan untuk 30 Hari Ramadhan:", laporan);
 
     console.log("🔥 Data status dari DB:", result);
 
-    const user = await db("users")
-    .where("id", tholibId)
-    .select("name")
-    .first(); // Mengambil satu baris data
-  
-    const name = user ? user.name : null; // Mengambil nama atau null jika tidak ditemukan  
+    const user = await db("users").where("id", tholibId).select("name").first(); // Mengambil satu baris data
+
+    const name = user ? user.name : null; // Mengambil nama atau null jika tidak ditemukan
 
     // 🔹 Format response untuk frontend
     const response = {
@@ -513,7 +512,7 @@ console.log("🔥 Data Amalan untuk 30 Hari Ramadhan:", laporan);
         description: amalan.deskripsi, // ✅ Kirim deskripsi ke frontend
         status: amalan.status === true ? true : false, // ✅ Boolean status
       })),
-      name: name
+      name: name,
     };
 
     const groupedAmalan = {};
@@ -532,9 +531,10 @@ console.log("🔥 Data Amalan untuk 30 Hari Ramadhan:", laporan);
       }
     });
 
-    // 🔹 Konversi kembali ke array
-    response.amalan_list = Object.values(groupedAmalan);
-    
+    // 🔹 Konversi kembali ke array, sambil menghapus "Shalat Rawatib"
+    response.amalan_list = Object.values(groupedAmalan).filter(
+      (amalan) => amalan.nama_amalan !== "Shalat Rawatib"
+    );
 
     console.log("📊 Data Response:", response);
     return res.json(response);
