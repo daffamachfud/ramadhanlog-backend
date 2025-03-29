@@ -391,6 +391,13 @@ exports.getAmalanLaporanTholib = async (req, res) => {
     let hijriCurrentDate;
     let hijriCurrentDay;
 
+    const hijriAdjustments = {
+      "2025-03-29": "29 Ramadhan 1446", // 1 Syawal 1446 di Indonesia
+      "2025-03-30": "30 Ramadhan 1446",
+      "2025-03-31": "1 Shawwal 1446",
+    };
+
+
     try {
       const prayerResponse = await fetch(prayerApiUrl);
       const prayerData = await prayerResponse.json();
@@ -401,12 +408,17 @@ exports.getAmalanLaporanTholib = async (req, res) => {
         const maghribDateTime = new Date(`${todayShalat}T${maghribTime}:00`);
         const now = new Date();
 
-        // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal Hijriah hari ini
-        if (now < maghribDateTime) {
-          hijriCurrentDate = moment().format("iD iMMMM iYYYY") + " H";
+        // 🔹 Jika ada dalam mapping, gunakan yang dari mapping
+        if (hijriAdjustments[todayShalat]) {
+          hijriCurrentDate = hijriAdjustments[todayShalat];
         } else {
-          hijriCurrentDate =
-            moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
+          hijriCurrentDate = moment(todayShalat, "YYYY-MM-DD").format("iD iMMMM iYYYY");
+        }
+
+        // 🔹 Jika setelah Maghrib, gunakan tanggal besok jika ada dalam mapping
+        if (now >= maghribDateTime) {
+          let besok = moment(todayShalat, "YYYY-MM-DD").add(1, "days").format("YYYY-MM-DD");
+          hijriCurrentDate = hijriAdjustments[besok] || moment(besok, "YYYY-MM-DD").format("iD iMMMM iYYYY");
         }
 
         hijriCurrentDay = parseInt(hijriCurrentDate.split(" ")[0]); // Ambil angka tanggal, contoh: 13
