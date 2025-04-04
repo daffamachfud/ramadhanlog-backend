@@ -372,189 +372,137 @@ exports.getDetailLaporanTholibMingguan = async (req, res) => {
 
 exports.getAmalanLaporanTholib = async (req, res) => {
   try {
-    console.log(`⏰ Mengambil Data Detail Laporan Tholib`);
+    console.log("⏰ Mengambil Data Detail Laporan Tholib");
 
     const { tanggal } = req.body;
     const tholibId = req.user.id;
-    const cityId = "1219"; // Kode Kota Bandung di API BAW
+    console.log("🔍 User ID:", tholibId);
+    console.log("📅 Tanggal yang diminta:", tanggal);
 
-    console.log("hasil id nya : ", tholibId);
-    console.log("hasil date nya : ", tanggal);
-
-    // ✅ Ambil tanggal Masehi hari ini dalam format YYYY-MM-DD
-    let todayShalat = new Intl.DateTimeFormat("fr-CA", {
-      timeZone: "Asia/Jakarta",
-    }).format(new Date());
-
-    // 🔹 Ambil waktu Maghrib dari API BAW
-    const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayShalat}`;
-    let hijriCurrentDate;
-    let hijriCurrentDay;
-
-    const hijriAdjustments = {
-      "2025-03-29": "29 Ramadhan 1446", // 1 Syawal 1446 di Indonesia
-      "2025-03-30": "30 Ramadhan 1446",
-      "2025-03-31": "1 Shawwal 1446",
-    };
-
+    // ✅ Ambil tanggal Hijriah dari API MyQuran (adj=-1)
+    let hijriCurrentDate = "";
+    let hijriDateList = [];
 
     try {
-      const prayerResponse = await fetch(prayerApiUrl);
-      const prayerData = await prayerResponse.json();
+      const today = new Date().toISOString().split("T")[0];
+      const hijriApi = `https://api.myquran.com/v2/cal/hijr/${today}?adj=-1`;
 
-      if (prayerData.status) {
-        const jadwal = prayerData.data.jadwal;
-        const maghribTime = jadwal.maghrib;
-        const maghribDateTime = new Date(`${todayShalat}T${maghribTime}:00`);
-        const now = new Date();
+      const hijriRes = await fetch(hijriApi);
+      const hijriData = await hijriRes.json();
 
-        // 🔹 Jika ada dalam mapping, gunakan yang dari mapping
-        if (hijriAdjustments[todayShalat]) {
-          hijriCurrentDate = hijriAdjustments[todayShalat];
-        } else {
-          hijriCurrentDate = moment(todayShalat, "YYYY-MM-DD").format("iD iMMMM iYYYY");
-        }
-
-        // 🔹 Jika setelah Maghrib, gunakan tanggal besok jika ada dalam mapping
-        if (now >= maghribDateTime) {
-          let besok = moment(todayShalat, "YYYY-MM-DD").add(1, "days").format("YYYY-MM-DD");
-          hijriCurrentDate = hijriAdjustments[besok] || moment(besok, "YYYY-MM-DD").format("iD iMMMM iYYYY");
-        }
-
-        hijriCurrentDay = parseInt(hijriCurrentDate.split(" ")[0]); // Ambil angka tanggal, contoh: 13
-        console.log(`📅 Tanggal Hijriah Saat Ini: ${hijriCurrentDate}`);
-      } else {
-        console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
-        return res
-          .status(500)
-          .json({ success: false, message: "Gagal mengambil waktu sholat" });
+      if (!hijriData.status || typeof hijriData.data !== "object") {
+        throw new Error("Format data Hijriah dari API tidak sesuai");
       }
+
+      // Ambil data tanggal dari response API
+      const hijriDateString = hijriData.data.date[1]; // contoh: "5 Syawal 1446 H"
+      hijriCurrentDate = hijriDateString.replace(" H", "").trim(); // "5 Syawal 1446"
+      console.log("📅 Tanggal Hijriah Hari Ini:", hijriCurrentDate);
+
+      const currentDay = hijriData.data.num[0]; // angka hari (misal: 5)
+      const currentMonth = hijriDateString.split(" ")[1]; // nama bulan hijriah: Syawal
+      const currentYear = hijriData.data.num[6]; // tahun hijriah: 1446
+
+      // Buat daftar 30 hari kebelakang (asumsi semua dalam bulan yang sama)
+      hijriDateList = Array.from({ length: 30 }, (_, i) => `${i + 1} ${currentMonth} ${currentYear}`);
     } catch (error) {
-      console.error("⚠️ Error mengambil data waktu sholat:", error);
+      console.error("❌ Gagal mengambil tanggal Hijriah:", error.message);
       return res.status(500).json({
         success: false,
-        message: "Kesalahan server dalam mengambil waktu sholat",
+        message: "Gagal mengambil tanggal Hijriah dari API",
       });
     }
 
-    // ✅ Gunakan tanggal yang dipilih atau default ke tanggal Hijriah saat ini
+    // ✅ Gunakan tanggal dari user (kalau ada), atau default ke tanggal Hijriah hari ini
     const selectedHijriDate = tanggal || hijriCurrentDate;
-    console.log("Selected date : ", selectedHijriDate);
+    console.log("📅 Selected date:", selectedHijriDate);
 
-    // 🔹 Hilangkan "H" di akhir hanya untuk query
+    // Untuk query ke DB, pastikan ada tahun hijriahnya
     let selectedHijriDateQuery = selectedHijriDate.replace(/H$/, "").trim();
-    console.log("Selected date query : ", selectedHijriDateQuery);
-
     if (!selectedHijriDateQuery.match(/\d{4}$/)) {
-      selectedHijriDateQuery += " 1446";
+      selectedHijriDateQuery += ` ${hijriDateList[0].split(" ")[2]}`; // Tambahkan tahun
     }
 
-    // 🔹 **Hitung rentang data untuk 30 hari Ramadhan**
-    const fullDateRange = [];
-    for (let i = 1; i <= 30; i++) {
-      fullDateRange.push(`${i} Ramadhan 1446`);
-    }
-
-    // 🔹 Query database untuk mendapatkan amalan harian
+    // 🔍 Ambil amalan harian (hanya yang status true) berdasarkan user dan rentang 30 hari terakhir
     const results = await db("amalan_harian")
       .select("hijri_date", db.raw("COUNT(*) as total"))
       .where({ user_id: tholibId, status: true })
+      .whereIn("hijri_date", hijriDateList)
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc");
 
-    // 🔹 Urutkan hasil berdasarkan tanggal Hijriah
-    const sortedResults = results.sort((a, b) => {
-      return (
-        parseInt(a.hijri_date.split(" ")[0]) -
-        parseInt(b.hijri_date.split(" ")[0])
-      );
-    });
-
-    // 🔹 Mapping data ke dalam array lengkap (1 - 30 Ramadhan)
-    const laporan = fullDateRange.map((date) => {
-      const existingData = sortedResults.find((row) => row.hijri_date === date);
+    // 🔁 Mapping data berdasarkan 30 hari terakhir (0 jika tidak ada)
+    const laporan = hijriDateList.map((date) => {
+      const existingData = results.find((row) => row.hijri_date === date);
       return {
         hijri_date: date,
-        total: existingData ? parseInt(existingData.total) : 0, // Jika tidak ada data, set total = 0
+        total: existingData ? parseInt(existingData.total) : 0,
       };
     });
 
-    console.log("🔥 Data Amalan untuk 30 Hari Ramadhan:", laporan);
-
-    // 🔹 Ambil daftar amalan berdasarkan tanggal yang dipilih
+    // 🔍 Ambil daftar amalan dan status berdasarkan selectedHijriDate
     const amalanList = await db("amalan as a")
       .select(
         "a.id as amalan_id",
         "a.name as nama_amalan",
         "a.description as deskripsi",
-        db.raw("COALESCE(ah.status, false) as status") // 🔥 Ubah NULL jadi false
+        db.raw("COALESCE(ah.status, false) as status")
       )
       .leftJoin("amalan_harian as ah", function () {
         this.on("a.id", "=", "ah.amalan_id")
-          .andOnVal("ah.user_id", tholibId) // Pakai andOnVal biar langsung nilai
+          .andOnVal("ah.user_id", tholibId)
           .andOnVal("ah.hijri_date", selectedHijriDateQuery);
       })
       .orderBy("ah.status", "asc");
 
-    const result = await db("amalan_harian")
-      .select("status")
-      .where("user_id", "=", "49c22b3c-9504-41ae-8a10-ce187a7c9829")
-      .andWhere("hijri_date", "=", selectedHijriDateQuery); // Sesuaikan dengan format yang benar di DB
+    // 🔍 Ambil nama user
+    const user = await db("users").where("id", tholibId).select("name").first();
+    const name = user ? user.name : null;
 
-    console.log("🔥 Data status dari DB:", result);
+    // 🔢 Ambil angka tanggal dari hijriCurrentDate (misal: 5 Syawal -> 5)
+    const hijriCurrentDay = parseInt(hijriCurrentDate.split(" ")[0]) || 1;
 
-    const user = await db("users").where("id", tholibId).select("name").first(); // Mengambil satu baris data
-
-    const name = user ? user.name : null; // Mengambil nama atau null jika tidak ditemukan
-
-    // 🔹 Format response untuk frontend
+    // 📦 Format final response
     const response = {
-      hijri_current_date: hijriCurrentDate, // Tanggal Hijriah saat ini
-      selected_date: selectedHijriDate, // Tanggal yang dipilih
+      hijri_current_date: hijriCurrentDate,
+      selected_date: selectedHijriDate,
       line_chart: laporan.map((item) => ({
-        name: `${item.hijri_date}`,
+        name: item.hijri_date,
         value: item.total,
       })),
-      button_dates: Array.from(
-        { length: hijriCurrentDay },
-        (_, i) => `${i + 1} Ramadhan`
-      ),
-      amalan_list: amalanList.map((amalan) => ({
-        nama_amalan: amalan.nama_amalan,
-        description: amalan.deskripsi, // ✅ Kirim deskripsi ke frontend
-        status: amalan.status === true ? true : false, // ✅ Boolean status
-      })),
+      button_dates: hijriDateList.slice(0, hijriCurrentDay),
+      amalan_list: [],
       name: name,
     };
 
+    // 🔁 Grouping amalan berdasarkan kategori (hilangkan redundansi rakaat)
     const groupedAmalan = {};
-    response.amalan_list.forEach((amalan) => {
-      // Hapus jumlah rakaat untuk mendapatkan kategori utama
-      let key = amalan.nama_amalan.replace(/\(\d+ rakaat\)/, "").trim();
-
-      // Jika kategori belum ada, tambahkan langsung
-      if (!groupedAmalan[key]) {
+    amalanList.forEach((amalan) => {
+      const key = amalan.nama_amalan.replace(/\(\d+ rakaat\)/, "").trim();
+      if (!groupedAmalan[key] || amalan.status) {
         groupedAmalan[key] = amalan;
-      } else {
-        // Jika sudah ada dan salah satu `status`-nya true, prioritaskan yang `true`
-        if (amalan.status) {
-          groupedAmalan[key] = amalan;
-        }
       }
     });
 
-    // 🔹 Konversi kembali ke array, sambil menghapus "Shalat Rawatib"
-    response.amalan_list = Object.values(groupedAmalan).filter(
-      (amalan) => amalan.nama_amalan !== "Shalat Rawatib"
-    );
+    // ✅ Filter & isi `amalan_list`
+    response.amalan_list = Object.values(groupedAmalan)
+      .filter((amalan) => amalan.nama_amalan !== "Shalat Rawatib")
+      .map((amalan) => ({
+        nama_amalan: amalan.nama_amalan,
+        description: amalan.deskripsi,
+        status: amalan.status === true,
+      }));
 
     console.log("📊 Data Response:", response);
     return res.json(response);
   } catch (error) {
     console.error("❌ Error get detail laporan tholib:", error);
-    res.status(500).json({
+    return res.status(500).json({
       message: "Terjadi kesalahan saat mengambil detail laporan tholib",
       error: error.message,
     });
   }
 };
+
+
+
