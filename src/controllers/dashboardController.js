@@ -17,7 +17,7 @@ const getDashboardMurabbi = async (req, res) => {
     console.log(`📅 Tanggal Masehi: ${todayMasehi}`);
 
     // 🔹 Ambil data waktu sholat & Hijriah dari API Quran
-    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=0`;
+    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
 
     let prayerTimes = {};
@@ -46,6 +46,7 @@ const getDashboardMurabbi = async (req, res) => {
         const jadwal = prayerData.data.jadwal;
         prayerTimes = {
           Subuh: jadwal.subuh,
+          Terbit: jadwal.terbit,
           Dzuhur: jadwal.dzuhur,
           Ashar: jadwal.ashar,
           Maghrib: jadwal.maghrib,
@@ -147,7 +148,7 @@ const getDashboardPengawas = async (req, res) => {
     console.log(`📅 Tanggal Masehi: ${todayMasehi}`);
 
     // 🔹 Ambil data waktu sholat & Hijriah dari API Quran
-    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=0`;
+    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
 
     let prayerTimes = {};
@@ -176,6 +177,7 @@ const getDashboardPengawas = async (req, res) => {
         const jadwal = prayerData.data.jadwal;
         prayerTimes = {
           Subuh: jadwal.subuh,
+          Terbit: jadwal.terbit,
           Dzuhur: jadwal.dzuhur,
           Ashar: jadwal.ashar,
           Maghrib: jadwal.maghrib,
@@ -280,13 +282,14 @@ const getDashboardTholib = async (req, res) => {
 
     console.log(`📅 Tanggal Masehi: ${todayMasehi}`);
 
-    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=0`;
+    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
 
     let hijriDate = "";
     let hijriDateForDb = "";
     let prayerTimes = {};
     let hijriYear = "";
+    let hijriMonth = ""; // ✅ tambahkan variabel global untuk bulan Hijriah
 
     try {
       const [hijriResponse, prayerResponse] = await Promise.all([
@@ -302,8 +305,10 @@ const getDashboardTholib = async (req, res) => {
 
       if (hijriData.status && prayerData.status) {
         hijriDate = hijriData.data.date[1];
-        hijriDateForDb = `${hijriData.data.num[4]} Ramadhan ${hijriData.data.num[6]}`;
-        hijriYear = hijriData.data.num[6];
+        const [day, month, year] = hijriDate.split(" ");
+        hijriDateForDb = `${day} ${month} ${year}`;
+        hijriMonth = month; // ✅ simpan di variabel luar
+        hijriYear = year;
 
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
@@ -311,6 +316,7 @@ const getDashboardTholib = async (req, res) => {
         const jadwal = prayerData.data.jadwal;
         prayerTimes = {
           Subuh: jadwal.subuh,
+          Terbit: jadwal.terbit,
           Dzuhur: jadwal.dzuhur,
           Ashar: jadwal.ashar,
           Maghrib: jadwal.maghrib,
@@ -348,7 +354,7 @@ const getDashboardTholib = async (req, res) => {
 
     const fullDateRange = [];
     for (let i = 1; i <= 30; i++) {
-      fullDateRange.push(`${i} Ramadhan ${hijriYear}`);
+      fullDateRange.push(`${i} ${hijriMonth} ${hijriYear}`);
     }
 
     const results = await db("amalan_harian")
@@ -606,7 +612,7 @@ const getDashboardPengawasReported = async (req, res) => {
     }
 
     // 🔹 Ambil tanggal Hijriah dari API MyQuran
-    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=0`;
+    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
 
     try {
       const hijriResponse = await fetch(hijriApiUrl);

@@ -152,18 +152,13 @@ const getAmalanHarian = async (req, res) => {
     const userId = req.user.id;
     const cityId = "1219"; // Kode Kota Bandung di API BAW
 
-    // ✅ Ambil parameter hijriDate dari frontend
-    let { hijriDate } = req.query; // Ambil dari query parameter
-
-    // ✅ Pastikan semua waktu menggunakan zona WIB (Asia/Jakarta)
+    // Pastikan semua waktu menggunakan zona WIB (Asia/Jakarta)
     const formatter = new Intl.DateTimeFormat("fr-CA", {
       timeZone: "Asia/Jakarta",
     });
-    const todayMasehi = formatter.format(new Date()); // Contoh: "2025-03-01"
+    const todayMasehi = formatter.format(new Date());
 
     console.log("⏰ Tanggal Masehi: ", todayMasehi);
-
-    // ✅ Ambil waktu sekarang dalam zona WIB
 
     const now = new Date();
     let currentTime = now.toLocaleTimeString("id-ID", {
@@ -172,21 +167,18 @@ const getAmalanHarian = async (req, res) => {
       timeZone: "Asia/Jakarta",
     });
 
-    // ✅ Ambil waktu Maghrib dari API BAW
+    // Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
     let maghribTime;
 
     try {
       const prayerResponse = await fetch(prayerApiUrl);
       const prayerData = await prayerResponse.json();
-
       if (prayerData.status) {
-        maghribTime = prayerData.data.jadwal.maghrib; // Contoh: "18:15"
+        maghribTime = prayerData.data.jadwal.maghrib;
       } else {
         console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
-        return res
-          .status(500)
-          .json({ success: false, message: "Gagal mengambil waktu sholat" });
+        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data waktu sholat:", error);
@@ -197,106 +189,73 @@ const getAmalanHarian = async (req, res) => {
     }
 
     console.log(`⏰ Waktu sekarang (string): "${currentTime}"`);
-    console.log(`⏰ Waktu sekarang: ${currentTime}`);
     console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
 
-    // Mapping tanggal Masehi ke Hijriah berdasarkan kalender resmi di Indonesia
-    const hijriAdjustments = {
-      "2025-03-29": "29 Ramadhan 1446", // 1 Syawal 1446 di Indonesia
-      "2025-03-30": "30 Ramadhan 1446",
-      "2025-03-31": "1 Shawwal 1446",
-    };
-
-    // Perbaikan: Ganti pemisah titik dengan titik dua
     currentTime = currentTime.replace(".", ":");
-
-    // Konversi waktu ke menit
     const [currentHour, currentMinute] = currentTime.split(":").map(Number);
     const [maghribHour, maghribMinute] = maghribTime.split(":").map(Number);
-
     const currentTimeInMinutes = currentHour * 60 + currentMinute;
     const maghribTimeInMinutes = maghribHour * 60 + maghribMinute;
+    const isAfterMaghrib = currentTimeInMinutes >= maghribTimeInMinutes;
 
     console.log(`⏰ Waktu sekarang (menit): ${currentTimeInMinutes}`);
-    console.log(` Waktu Maghrib (menit): ${maghribTimeInMinutes}`);
+    console.log(`🕌 Waktu Maghrib (menit): ${maghribTimeInMinutes}`);
+    console.log(`🔄 Mengambil data kalender Hijriah dari API MyQuran...`);
 
-    // Penentuan isAfterMaghrib
-    const isAfterMaghrib = currentTimeInMinutes >= maghribTimeInMinutes;
-    console.log(` Is After Maghrib: ${isAfterMaghrib}`);
+    let currentHijriDate = "Unknown";
 
-    // ✅ Tentukan currentHijriDate (acuan tanggal Hijriah hari ini)
+    try {
+      const masehiUntukHijri = isAfterMaghrib
+        ? moment(todayMasehi, "YYYY-MM-DD").add(1, "days").format("YYYY-MM-DD")
+        : todayMasehi;
 
-    let currentHijriDate = moment(todayMasehi, "YYYY-MM-DD").format(
-      "iD iMMMM iYYYY"
-    );
+      const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr/${masehiUntukHijri}?adj=-1`;
+      const calResponse = await fetch(hijriApiUrl);
+      const calData = await calResponse.json();
 
-    // Cek apakah tanggal Masehi ada dalam mapping
-    if (hijriAdjustments[todayMasehi]) {
-      currentHijriDate = hijriAdjustments[todayMasehi];
-    } else {
-      currentHijriDate = moment(todayMasehi, "YYYY-MM-DD").format(
-        "iD iMMMM iYYYY"
-      );
-    }
+      console.log("✅ Response dari API MyQuran:");
+      console.log(JSON.stringify(calData, null, 2));
 
-    if (isAfterMaghrib) {
-      let tomorrow = moment(todayMasehi, "YYYY-MM-DD").add(1, "days").format("YYYY-MM-DD");
-      if (hijriAdjustments[tomorrow]) {
-        currentHijriDate = hijriAdjustments[tomorrow];
+      if (calData && calData.status && Array.isArray(calData.data.date)) {
+        currentHijriDate = calData.data.date[1].replace(" H", "");
+        console.log(`📅 currentHijriDate (Acuan Hari Ini): ${currentHijriDate}`);
       } else {
-        currentHijriDate = moment(tomorrow, "YYYY-MM-DD").format("iD iMMMM iYYYY");
+        console.warn("⚠️ Struktur data tidak sesuai ekspektasi:", calData);
       }
+    } catch (err) {
+      console.error("❌ Error mengambil kalender Hijriah dari API:", err);
     }
 
-    console.log(`📅 currentHijriDate (Acuan Hari Ini): ${currentHijriDate}`);
+    // 🔽 Ambil data amalan harian berdasarkan range 30 hari terakhir dari currentHijriDate
+    const hijriTodayMoment = moment(currentHijriDate, "D MMMM YYYY");
+    const hijriStartMoment = hijriTodayMoment.clone().subtract(30, "days");
 
-    // ✅ Jika hijriDate tidak diberikan dari frontend, gunakan currentHijriDate
-    if (!hijriDate) {
-      hijriDate = currentHijriDate;
-    }
+    const hijriStartDate = hijriStartMoment.format("D MMMM YYYY");
+    const hijriEndDate = currentHijriDate;
 
-    console.log(`📅 Menggunakan hijriDate untuk query: ${hijriDate}`);
+    console.log(`📆 Mengambil amalan dari ${hijriStartDate} hingga ${hijriEndDate}`);
 
-    // ✅ Cari tanggal Masehi berdasarkan hijriDate (jika diberikan dari frontend)
-    let tanggalMasehi = null;
-    const masehiQuery = await db("amalan_harian")
-      .select("tanggal")
-      .where("hijri_date", hijriDate)
-      .first();
-
-    if (masehiQuery) {
-      tanggalMasehi = masehiQuery.tanggal;
-    } else {
-      console.warn(
-        `⚠️ Tidak ditemukan tanggal Masehi untuk hijriDate: ${hijriDate}`
-      );
-    }
-
-    console.log(
-      `📅 tanggalMasehi yang digunakan: ${tanggalMasehi || "tidak ditemukan"}`
-    );
-
-    // ✅ Ambil semua amalan
+    // Ambil semua amalan
     const daftarAmalan = await db("amalan")
       .select("id", "name", "description", "type", "options", "parent_id")
       .orderBy("order_number", "asc");
 
-    // ✅ Ambil amalan yang sudah dicatat berdasarkan hijri_date
+    // Ambil amalan harian yang sudah dicatat dalam rentang hijri_date
     const amalanHarian = await db("amalan_harian")
-      .select("amalan_id", "status", "nilai")
+      .select("amalan_id", "status", "nilai", "hijri_date")
       .where("user_id", userId)
-      .andWhere("hijri_date", hijriDate); // Hanya gunakan hijri_date
+      .andWhere("hijri_date", ">=", hijriStartDate)
+      .andWhere("hijri_date", "<=", hijriEndDate);
 
-    // Ubah hasil menjadi objek untuk pencocokan cepat
     const amalanDicatat = {};
     amalanHarian.forEach((item) => {
-      amalanDicatat[item.amalan_id] = {
+      if (!amalanDicatat[item.hijri_date]) amalanDicatat[item.hijri_date] = {};
+      amalanDicatat[item.hijri_date][item.amalan_id] = {
         status: item.status,
         nilai: item.nilai || "",
       };
     });
 
-    // Gabungkan semua amalan, tambahkan status `done` dan `nilai`
     const hasil = daftarAmalan.map((item) => ({
       id: item.id,
       nama: item.name,
@@ -304,23 +263,23 @@ const getAmalanHarian = async (req, res) => {
       type: item.type,
       options: item.options,
       parentId: item.parent_id,
-      done: amalanDicatat[item.id] ? amalanDicatat[item.id].status : false,
-      nilai: amalanDicatat[item.id] ? amalanDicatat[item.id].nilai : "",
+      done: amalanDicatat[currentHijriDate]?.[item.id]?.status || false,
+      nilai: amalanDicatat[currentHijriDate]?.[item.id]?.nilai || "",
     }));
 
     res.json({
       success: true,
-      hijriDate, // ✅ Tanggal Hijriah yang digunakan untuk query
-      currentHijriDate, // ✅ Acuan hari ini masuk ke tanggal Hijriah berapa
-      tanggalMasehi, // ✅ Tanggal Masehi yang ditemukan untuk hijriDate
+      hijriDate: currentHijriDate,
+      currentHijriDate,
+      tanggalMasehi: todayMasehi,
       data: hasil,
     });
   } catch (error) {
     console.error("❌ Error mengambil amalan harian:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Gagal mengambil amalan harian" });
+    res.status(500).json({ success: false, message: "Gagal mengambil amalan harian" });
   }
 };
+
+
 
 module.exports = { catatAmalanHarian, getAllAmalan, getAmalanHarian };
