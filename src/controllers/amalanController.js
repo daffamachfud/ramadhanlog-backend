@@ -205,11 +205,7 @@ const getAmalanHarian = async (req, res) => {
     let currentHijriDate = "Unknown";
 
     try {
-      const masehiUntukHijri = isAfterMaghrib
-        ? moment(todayMasehi, "YYYY-MM-DD").add(1, "days").format("YYYY-MM-DD")
-        : todayMasehi;
-
-      const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr/${masehiUntukHijri}?adj=-1`;
+      const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr/?adj=-1`;
       const calResponse = await fetch(hijriApiUrl);
       const calData = await calResponse.json();
 
