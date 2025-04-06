@@ -8,25 +8,70 @@ exports.getLaporanTholib = async (req, res) => {
     const { name, halaqah } = req.query;
     const murabbiId = req.user.id;
 
+    // 1. Ambil tanggal hijriah hari ini dari API eksternal
+    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
+
+    const hijriRes = await fetch(hijriApiUrl);
+    const hijriData = await hijriRes.json();
+
+    if (!hijriData.status) {
+      return res.status(500).json({ message: "Gagal mengambil tanggal hijriah" });
+    }
+
+    const hijriDateToday = hijriData.data.date[1];
+    const [, hijriMonth, hijriYear] = hijriDateToday.split(" ");
+    const fullHijriRange = Array.from({ length: 30 }, (_, i) => `${i + 1} ${hijriMonth} ${hijriYear}`);
+
+    // 2. Ambil data tholib yang ada di halaqah user ini
     let query = db("users as u")
       .join("relasi_halaqah_tholib as rth", "u.id", "rth.tholib_id")
       .join("halaqah as h", "rth.halaqah_id", "h.id")
       .where("h.murabbi_id", murabbiId)
       .select("u.id", "u.name", "h.name as halaqah");
 
-    const values = [];
-
-    // Filter jika nama tholib diberikan
     if (name) {
       query = query.where("u.name", "like", `%${name}%`);
     }
 
-    // Filter jika halaqah diberikan
     if (halaqah) {
       query = query.where("h.name", "like", `%${halaqah}%`);
     }
 
-    const laporan = await query;
+    const tholibList = await query;
+
+    // 3. Ambil seluruh data amalan_harian untuk tholib yang ditemukan, dalam bulan hijriah saat ini
+    const tholibIds = tholibList.map((t) => t.id);
+    const bulanPattern = `%${hijriMonth} ${hijriYear}`; // contoh: %Syawal 1446
+
+    const amalanData = await db("amalan_harian")
+    .whereIn("user_id", tholibIds)
+    .andWhere("hijri_date", "like", bulanPattern)
+    .andWhere("status", true) // ✅ hanya ambil yang sudah dicentang
+    .select("user_id", "hijri_date")
+    .groupBy("user_id", "hijri_date")
+    .count("* as total");
+
+    // 4. Susun hasil akhir per tholib
+    const laporan = tholibList.map((tholib) => {
+      const dataPerHari = fullHijriRange.map((tanggal) => {
+        const item = amalanData.find(
+          (a) => a.user_id === tholib.id && a.hijri_date === tanggal
+        );
+        return {
+          name: tanggal,
+          value: item ? parseInt(item.total) : 0,
+        };
+      });
+
+      console.log("hasil laporan tholib amalan : ",dataPerHari)
+
+      return {
+        id: tholib.id,
+        name: tholib.name,
+        halaqah: tholib.halaqah,
+        line_chart: dataPerHari,
+      };
+    });
 
     res.json(laporan);
   } catch (error) {
@@ -37,6 +82,7 @@ exports.getLaporanTholib = async (req, res) => {
     });
   }
 };
+
 
 exports.getLaporanTholibByPengawas = async (req, res) => {
   try {
