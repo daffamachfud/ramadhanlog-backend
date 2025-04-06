@@ -38,7 +38,9 @@ const getDashboardMurabbi = async (req, res) => {
 
       if (hijriData.status && prayerData.status) {
         hijriDate = hijriData.data.date[1]; // Contoh: "30 Ramadhan 1446 H"
-        hijriDateForDb = `${hijriData.data.num[4]} Ramadhan ${hijriData.data.num[6]}`; // Format untuk database
+       // 🔁 Dinamis ambil nilai untuk DB
+       const [day, month, year] = hijriDate.replace(" H", "").split(" ");
+       hijriDateForDb = `${day} ${month} ${year}`;
 
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
@@ -131,7 +133,6 @@ const getDashboardMurabbi = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server Error" });
   }
 };
-
 
 const getDashboardPengawas = async (req, res) => {
   try {
@@ -483,8 +484,31 @@ const getDashboardMurabbiReported = async (req, res) => {
       tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
     }
 
-    console.log(`📅 Tanggal Masehi yang digunakan: ${tanggalMasehi}`);
+     // 🔹 Ambil tanggal Hijriah dari API MyQuran
+     const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
 
+
+     try {
+      const hijriResponse = await fetch(hijriApiUrl);
+      const hijriData = await hijriResponse.json();
+
+      if (hijriData.status === true) {
+        hijriDateForDb = hijriData.data.date[1].replace(" H", ""); // "30 Ramadhan 1446 H"
+
+        console.log(`📅 Tanggal Hijriah yang digunakan: ${hijriDateForDb}`);
+      } else {
+        console.error("⚠️ Gagal mengambil tanggal Hijriah dari API MyQuran");
+        return res
+          .status(500)
+          .json({ success: false, message: "Gagal mengambil tanggal Hijriah" });
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data tanggal Hijriah:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Kesalahan server dalam mengambil tanggal Hijriah",
+      });
+    }
     // 1. Ambil semua tholib yang tergabung dalam halaqah murabbi
     const tholibs = await db("users")
       .join(
@@ -546,6 +570,7 @@ const getDashboardMurabbiReported = async (req, res) => {
         totalTholib,
         reportedTholib: reportedCount,
         tholibReports,
+        hijriDate: hijriDateForDb,
       },
     });
   } catch (error) {
@@ -732,7 +757,6 @@ const getDashboardMurabbiUnreported = async (req, res) => {
     // 🔹 Ambil waktu Maghrib dari API BAW
     const prayerApiUrl = `https://api.myquran.com/v2/sholat/jadwal/${cityId}/${todayMasehi}`;
     let maghribTime;
-    let hijriDate;
     let hijriDateForDb;
 
     try {
@@ -741,22 +765,8 @@ const getDashboardMurabbiUnreported = async (req, res) => {
 
       if (prayerData.status === true) {
         const jadwal = prayerData.data.jadwal;
-        const maghribTime = jadwal.maghrib; // Contoh: "18:15"
-        const maghribDateTime = new Date(`${todayMasehi}T${maghribTime}:00`);
-
-        const now = new Date();
-
-        // 🔹 Jika sekarang masih sebelum Maghrib, gunakan tanggal hijriah hari ini
-        if (now < maghribDateTime) {
-          hijriDate = moment().format("iD iMMMM iYYYY") + " H";
-          hijriDateForDb = moment().format("iD iMMMM iYYYY");
-        } else {
-          hijriDate = moment().add(1, "days").format("iD iMMMM iYYYY") + " H";
-          hijriDateForDb = moment().add(1, "days").format("iD iMMMM iYYYY");
-        }
-
-        console.log(`📅 Tanggal Hijriah: ${hijriDate}`);
-        console.log(`📅 Tanggal Hijriah DB: ${hijriDateForDb}`);
+        maghribTime = jadwal.maghrib; // Contoh: "18:15"
+        console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
       } else {
         console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
         return res
@@ -773,11 +783,37 @@ const getDashboardMurabbiUnreported = async (req, res) => {
         });
     }
 
-    console.log(`⏰ Waktu sekarang: ${currentTime}`);
-    console.log(`🕌 Waktu Maghrib: ${maghribTime}`);
+   // 🔹 Tentukan apakah sekarang sebelum atau sesudah Maghrib
+   const now = new Date();
+   const maghribDateTime = new Date(`${todayMasehi}T${maghribTime}:00`);
+   const isBeforeMaghrib = now < maghribDateTime;
 
-    // ✅ Tentukan apakah sekarang sudah melewati Maghrib
-    const isBeforeMaghrib = currentTime < maghribTime;
+   // 🔹 Ambil Hijri Date dari API MyQuran (adj = -1 untuk zona WIB)
+   let hijriDate = "-";
+
+   try {
+     const hijriApiUrl = "https://api.myquran.com/v2/cal/hijr/?adj=-1";
+     const hijriResponse = await fetch(hijriApiUrl);
+     const hijriData = await hijriResponse.json();
+
+     if (hijriData.status === true) {
+       // Format: "5 Syawal 1446 H"
+       hijriDate = hijriData.data.date[1];
+       hijriDateForDb = hijriDate.replace(" H", "");
+       console.log(`📅 Hijri Date (for response): ${hijriDate}`);
+     } else {
+       return res.status(500).json({
+         success: false,
+         message: "Gagal mengambil tanggal hijriah",
+       });
+     }
+   } catch (error) {
+     console.error("⚠️ Error mengambil data tanggal hijriah:", error);
+     return res.status(500).json({
+       success: false,
+       message: "Gagal mengambil tanggal hijriah dari API",
+     });
+   }
 
     // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
     let tanggalMasehi = todayMasehi;
