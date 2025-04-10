@@ -12,15 +12,21 @@ const catatAmalanHarian = async (req, res) => {
     console.log("Catat Amalan Harian");
 
     if (!amalan || !Array.isArray(amalan) || amalan.length === 0) {
-      return res.status(400).json({ message: "Daftar amalan tidak boleh kosong" });
+      return res
+        .status(400)
+        .json({ message: "Daftar amalan tidak boleh kosong" });
     }
 
     if (!hijriDate) {
-      return res.status(400).json({ message: "Tanggal Hijriah wajib dikirim dari frontend" });
+      return res
+        .status(400)
+        .json({ message: "Tanggal Hijriah wajib dikirim dari frontend" });
     }
 
     // ✅ Pastikan semua waktu menggunakan zona WIB (Asia/Jakarta)
-    const formatter = new Intl.DateTimeFormat("fr-CA", { timeZone: "Asia/Jakarta" });
+    const formatter = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Asia/Jakarta",
+    });
     const tanggalMasehi = formatter.format(new Date()); // Contoh: "2025-03-01"
 
     // ✅ Konversi tanggal Hijriah ke Masehi
@@ -30,7 +36,9 @@ const catatAmalanHarian = async (req, res) => {
 
     // ✅ Ambil daftar ID amalan yang dikirim dari frontend
     const amalanIds = amalan.map((item) => item.id);
-    const amalanList = await db("amalan").whereIn("id", amalanIds).select("id", "name");
+    const amalanList = await db("amalan")
+      .whereIn("id", amalanIds)
+      .select("id", "name");
 
     if (amalanList.length === 0) {
       return res.status(404).json({ message: "Amalan tidak ditemukan" });
@@ -95,7 +103,9 @@ const catatAmalanHarian = async (req, res) => {
           existingAmalan.status !== updatedStatus ||
           existingAmalan.nilai.toLowerCase() !== nilaiLower
         ) {
-          console.log(`🔄 Update amalan ID ${id}, karena status atau nilai berubah.`);
+          console.log(
+            `🔄 Update amalan ID ${id}, karena status atau nilai berubah.`
+          );
 
           await db("amalan_harian")
             .where({
@@ -108,7 +118,9 @@ const catatAmalanHarian = async (req, res) => {
               nilai: nilai || "",
             });
         } else {
-          console.log(`✅ Tidak ada perubahan untuk amalan ID ${id}, tetap menggunakan data lama.`);
+          console.log(
+            `✅ Tidak ada perubahan untuk amalan ID ${id}, tetap menggunakan data lama.`
+          );
         }
       }
     }
@@ -178,7 +190,9 @@ const getAmalanHarian = async (req, res) => {
         maghribTime = prayerData.data.jadwal.maghrib;
       } else {
         console.error("⚠️ Gagal mengambil waktu Maghrib dari API");
-        return res.status(500).json({ success: false, message: "Gagal mengambil waktu sholat" });
+        return res
+          .status(500)
+          .json({ success: false, message: "Gagal mengambil waktu sholat" });
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data waktu sholat:", error);
@@ -214,7 +228,9 @@ const getAmalanHarian = async (req, res) => {
 
       if (calData && calData.status && Array.isArray(calData.data.date)) {
         currentHijriDate = calData.data.date[1].replace(" H", "");
-        console.log(`📅 currentHijriDate (Acuan Hari Ini): ${currentHijriDate}`);
+        console.log(
+          `📅 currentHijriDate (Acuan Hari Ini): ${currentHijriDate}`
+        );
       } else {
         console.warn("⚠️ Struktur data tidak sesuai ekspektasi:", calData);
       }
@@ -229,7 +245,9 @@ const getAmalanHarian = async (req, res) => {
     const hijriStartDate = hijriStartMoment.format("D MMMM YYYY");
     const hijriEndDate = currentHijriDate;
 
-    console.log(`📆 Mengambil amalan dari ${hijriStartDate} hingga ${hijriEndDate}`);
+    console.log(
+      `📆 Mengambil amalan dari ${hijriStartDate} hingga ${hijriEndDate}`
+    );
 
     // Ambil semua amalan
     const daftarAmalan = await db("amalan")
@@ -272,10 +290,143 @@ const getAmalanHarian = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error mengambil amalan harian:", error);
-    res.status(500).json({ success: false, message: "Gagal mengambil amalan harian" });
+    res
+      .status(500)
+      .json({ success: false, message: "Gagal mengambil amalan harian" });
   }
 };
 
+const getAllAmalanForMurabbi = async (req, res) => {
+  try {
+    const amalanList = await db("amalan")
+      .select(
+        "id",
+        "name as nama",
+        "description",
+        "type",
+        "options",
+        "parent_id",
+        "status",
+        "is_for_all_halaqah"
+      )
+      .orderBy("order_number", "asc");
 
+    return res.json({
+      success: true,
+      data: amalanList,
+    });
+  } catch (error) {
+    console.error("Error fetching amalan:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Gagal mengambil data amalan" });
+  }
+};
 
-module.exports = { catatAmalanHarian, getAllAmalan, getAmalanHarian };
+const addAmalanByMurabbi = async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      type,
+      options,
+      is_for_all_halaqah,
+      halaqah_ids,
+    } = req.body;
+
+    if (!name || !description || !type) {
+      return res
+        .status(400)
+        .json({ message: "Nama, deskripsi, dan tipe wajib diisi" });
+    }
+
+    if (
+      type === "dropdown" &&
+      (!options || !Array.isArray(options) || options.length === 0)
+    ) {
+      return res
+        .status(400)
+        .json({ message: "Opsi harus diisi jika tipe dropdown" });
+    }
+
+    if (!is_for_all_halaqah && (!halaqah_ids || halaqah_ids.length === 0)) {
+      return res
+        .status(400)
+        .json({ message: "Pilih minimal satu halaqah jika tidak untuk semua" });
+    }
+
+    const [newAmalan] = await db("amalan")
+      .insert({
+        name,
+        description,
+        type,
+        options: JSON.stringify(options), // Simpan sebagai stringified array
+        is_for_all_halaqah,
+      })
+      .returning("*");
+
+    // Jika bukan untuk semua, simpan relasi ke halaqah
+    if (!is_for_all_halaqah) {
+      const relasi = halaqah_ids.map((id) => ({
+        amalan_id: newAmalan.id,
+        halaqah_id: id,
+      }));
+      await db("amalan_halaqah").insert(relasi);
+    }
+
+    res
+      .status(201)
+      .json({ message: "Amalan berhasil ditambahkan", data: newAmalan });
+  } catch (error) {
+    console.error("Error adding amalan:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+const updateAmalanStatus = async (req, res) => {
+  const { id, status } = req.body;
+
+  const allowedStatus = ["active", "inactive"]; // ✅ konsisten
+  if (!allowedStatus.includes(status)) {
+    return res.status(400).json({ message: "Status tidak valid" });
+  }
+
+  try {
+    const updated = await db("amalan").where({ id }).update({ status: status });
+
+    if (updated === 0) {
+      return res.status(404).json({ message: "Amalan tidak ditemukan" });
+    }
+
+    res.json({ message: "Status amalan berhasil diperbarui", status });
+  } catch (error) {
+    console.error("Gagal update status amalan:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server" });
+  }
+};
+
+const getAmalanById = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const amalan = await db("amalan").where({ id }).first();
+    if (!amalan) {
+      return res.status(404).json({ message: "Amalan tidak ditemukan" });
+    }
+
+    res.json(amalan);
+  } catch (error) {
+    console.error("Gagal ambil detail amalan:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+module.exports = {
+  catatAmalanHarian,
+  getAllAmalan,
+  getAmalanById,
+  getAmalanHarian,
+  getAllAmalanForMurabbi,
+  addAmalanByMurabbi,
+  updateAmalanStatus,
+};
