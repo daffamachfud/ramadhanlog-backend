@@ -7,7 +7,8 @@ const amalanRoutes = require("./routes/amalanRoutes");
 const halaqahRoutes = require("./routes/halaqahRoutes");
 const laporanRoutes = require("./routes/laporanRoutes");
 const profileRoutes = require("./routes/profileRoutes");
-const wrappedRoutes = require("./routes/wrappedRoutes")
+const wrappedRoutes = require("./routes/wrappedRoutes");
+const postRoutes = require("./routes/postRoutes");
 
 dotenv.config();
 const app = express();
@@ -50,6 +51,7 @@ app.use("/api/halaqah", halaqahRoutes)
 app.use("/api/laporan-tholib", laporanRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/wrapped", wrappedRoutes);
+app.use("/api/post", postRoutes);
 
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => console.log(`🚀 Server berjalan di http://localhost:${PORT}`));

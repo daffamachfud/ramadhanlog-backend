@@ -31,16 +31,17 @@ const getDashboardMurabbi = async (req, res) => {
       ]);
 
       if (!hijriResponse.ok) throw new Error("Gagal mengambil data Hijriah");
-      if (!prayerResponse.ok) throw new Error("Gagal mengambil data waktu sholat");
+      if (!prayerResponse.ok)
+        throw new Error("Gagal mengambil data waktu sholat");
 
       const hijriData = await hijriResponse.json();
       const prayerData = await prayerResponse.json();
 
       if (hijriData.status && prayerData.status) {
         hijriDate = hijriData.data.date[1]; // Contoh: "30 Ramadhan 1446 H"
-       // 🔁 Dinamis ambil nilai untuk DB
-       const [day, month, year] = hijriDate.replace(" H", "").split(" ");
-       hijriDateForDb = `${day} ${month} ${year}`;
+        // 🔁 Dinamis ambil nilai untuk DB
+        const [day, month, year] = hijriDate.replace(" H", "").split(" ");
+        hijriDateForDb = `${day} ${month} ${year}`;
 
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
@@ -59,7 +60,9 @@ const getDashboardMurabbi = async (req, res) => {
         console.log(`🕌 Waktu Sholat:`, prayerTimes);
       } else {
         console.error("⚠️ Gagal mengambil data Hijriah atau waktu sholat.");
-        return res.status(500).json({ success: false, message: "Gagal mengambil data dari API." });
+        return res
+          .status(500)
+          .json({ success: false, message: "Gagal mengambil data dari API." });
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data dari API:", error.message);
@@ -68,10 +71,20 @@ const getDashboardMurabbi = async (req, res) => {
 
     // 1️⃣ Ambil semua tholib yang tergabung dalam halaqah murabbi
     const tholibs = await db("users")
-      .join("relasi_halaqah_tholib", "users.id", "=", "relasi_halaqah_tholib.tholib_id")
+      .join(
+        "relasi_halaqah_tholib",
+        "users.id",
+        "=",
+        "relasi_halaqah_tholib.tholib_id"
+      )
       .join("halaqah", "relasi_halaqah_tholib.halaqah_id", "=", "halaqah.id")
       .where("halaqah.murabbi_id", murabbiId)
-      .select("users.id", "users.name", "halaqah.id as halaqah_id", "halaqah.name");
+      .select(
+        "users.id",
+        "users.name",
+        "halaqah.id as halaqah_id",
+        "halaqah.name"
+      );
 
     const totalTholib = tholibs.length;
     const tholibIds = tholibs.map((t) => t.id);
@@ -101,7 +114,12 @@ const getDashboardMurabbi = async (req, res) => {
     const unreportedCount = totalTholib - reportedCount;
 
     const tholibReports = await db("users")
-      .join("relasi_halaqah_tholib", "users.id", "=", "relasi_halaqah_tholib.tholib_id")
+      .join(
+        "relasi_halaqah_tholib",
+        "users.id",
+        "=",
+        "relasi_halaqah_tholib.tholib_id"
+      )
       .join("halaqah", "relasi_halaqah_tholib.halaqah_id", "=", "halaqah.id")
       .whereIn(
         "users.id",
@@ -163,18 +181,19 @@ const getDashboardPengawas = async (req, res) => {
       ]);
 
       if (!hijriResponse.ok) throw new Error("Gagal mengambil data Hijriah");
-      if (!prayerResponse.ok) throw new Error("Gagal mengambil data waktu sholat");
+      if (!prayerResponse.ok)
+        throw new Error("Gagal mengambil data waktu sholat");
 
       const hijriData = await hijriResponse.json();
       const prayerData = await prayerResponse.json();
 
       if (hijriData.status && prayerData.status) {
         hijriDate = hijriData.data.date[1]; // Contoh: "5 Syawal 1446 H"
-  
+
         // 🔁 Dinamis ambil nilai untuk DB
         const [day, month, year] = hijriDate.replace(" H", "").split(" ");
         hijriDateForDb = `${day} ${month} ${year}`;
-      
+
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
 
@@ -192,7 +211,9 @@ const getDashboardPengawas = async (req, res) => {
         console.log(`🕌 Waktu Sholat:`, prayerTimes);
       } else {
         console.error("⚠️ Gagal mengambil data Hijriah atau waktu sholat.");
-        return res.status(500).json({ success: false, message: "Gagal mengambil data dari API." });
+        return res
+          .status(500)
+          .json({ success: false, message: "Gagal mengambil data dari API." });
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data dari API:", error.message);
@@ -302,7 +323,8 @@ const getDashboardTholib = async (req, res) => {
       ]);
 
       if (!hijriResponse.ok) throw new Error("Gagal mengambil data Hijriah");
-      if (!prayerResponse.ok) throw new Error("Gagal mengambil data waktu sholat");
+      if (!prayerResponse.ok)
+        throw new Error("Gagal mengambil data waktu sholat");
 
       const hijriData = await hijriResponse.json();
       const prayerData = await prayerResponse.json();
@@ -331,13 +353,21 @@ const getDashboardTholib = async (req, res) => {
         console.log(`🕌 Waktu Sholat:`, prayerTimes);
       } else {
         console.error("⚠️ Gagal mengambil data Hijriah atau Sholat.");
-        return res.status(500).json({ success: false, message: "Gagal mengambil data waktu sholat atau Hijriah." });
+        return res
+          .status(500)
+          .json({
+            success: false,
+            message: "Gagal mengambil data waktu sholat atau Hijriah.",
+          });
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data dari API:", error.message);
       return res.status(500).json({ success: false, message: error.message });
     }
 
+    //DISINI SIAPKAN TEMPLATE PER BULAN
+
+    //INI UNTUK RAMADHAN
     const [{ total }] = await db("amalan_harian")
       .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
       .count("* as total");
@@ -345,12 +375,44 @@ const getDashboardTholib = async (req, res) => {
     console.log(`✅ Total Amalan Hari Ini: ${total}`);
 
     const totalAmalan = 20;
-    const percentage = ((total / totalAmalan) * 100).toFixed(2) + "%";
+
+    //END RAMADHAN
+
+    console.log(`📊 Tholib Id:`, tholibId);
+
+    //SYAWAL
+    const totalAmalanSyawal = 6;
+
+    const result = await db.raw(
+      `
+    SELECT 
+      a.id AS amalan_id,
+      COUNT(ah.id) AS completed_count
+    FROM 
+      amalan a
+    JOIN 
+      amalan_harian ah ON a.id = ah.amalan_id
+    WHERE 
+      a.name = 'Puasa Syawal 1446H'
+      AND ah.hijri_date BETWEEN '1 Syawal 1446' AND '30 Syawal 1446'
+      AND ah.status = TRUE
+      AND ah.user_id = ?
+    GROUP BY 
+      a.id;
+  `,
+      [tholibId]
+    );
+
+    const totalSyawal = result.rows[0]?.completed_count || 0;
+    console.log("✅ Total Puasa Syawal:", totalSyawal);
+
+    const percentage =
+      ((totalSyawal / totalAmalanSyawal) * 100).toFixed(2) + "%";
 
     const ringkasanHarian = {
       date: hijriDate,
-      completed: parseInt(total),
-      total: totalAmalan,
+      completed: parseInt(totalSyawal),
+      total: totalAmalanSyawal,
       percentage,
     };
 
@@ -361,14 +423,28 @@ const getDashboardTholib = async (req, res) => {
       fullDateRange.push(`${i} ${hijriMonth} ${hijriYear}`);
     }
 
+    //LINE CHART
+    //RAMADHAN
     const results = await db("amalan_harian")
       .select("hijri_date", db.raw("COUNT(*) as total"))
       .where({ user_id: tholibId, status: true })
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc");
 
+    //Syawal
+    const resultsSyawal = await db("amalan_harian")
+      .join("amalan", "amalan.id", "amalan_harian.amalan_id")
+      .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
+      .where({
+        "amalan_harian.user_id": tholibId,
+        "amalan_harian.status": true,
+        "amalan.name": "Puasa Syawal 1446H",
+      })
+      .groupBy("amalan_harian.hijri_date")
+      .orderBy("amalan_harian.hijri_date", "asc");
+
     const dataPerminggu = fullDateRange.map((date) => {
-      const existingData = results.find((row) => row.hijri_date === date);
+      const existingData = resultsSyawal.find((row) => row.hijri_date === date);
       return {
         hijri_date: date,
         total: existingData ? parseInt(existingData.total) : 0,
@@ -484,11 +560,10 @@ const getDashboardMurabbiReported = async (req, res) => {
       tanggalMasehi = besok.toISOString().split("T")[0]; // Format YYYY-MM-DD
     }
 
-     // 🔹 Ambil tanggal Hijriah dari API MyQuran
-     const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
+    // 🔹 Ambil tanggal Hijriah dari API MyQuran
+    const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr?adj=-1`;
 
-
-     try {
+    try {
       const hijriResponse = await fetch(hijriApiUrl);
       const hijriData = await hijriResponse.json();
 
@@ -775,45 +850,43 @@ const getDashboardMurabbiUnreported = async (req, res) => {
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data waktu sholat:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Kesalahan server dalam mengambil waktu sholat",
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Kesalahan server dalam mengambil waktu sholat",
+      });
     }
 
-   // 🔹 Tentukan apakah sekarang sebelum atau sesudah Maghrib
-   const now = new Date();
-   const maghribDateTime = new Date(`${todayMasehi}T${maghribTime}:00`);
-   const isBeforeMaghrib = now < maghribDateTime;
+    // 🔹 Tentukan apakah sekarang sebelum atau sesudah Maghrib
+    const now = new Date();
+    const maghribDateTime = new Date(`${todayMasehi}T${maghribTime}:00`);
+    const isBeforeMaghrib = now < maghribDateTime;
 
-   // 🔹 Ambil Hijri Date dari API MyQuran (adj = -1 untuk zona WIB)
-   let hijriDate = "-";
+    // 🔹 Ambil Hijri Date dari API MyQuran (adj = -1 untuk zona WIB)
+    let hijriDate = "-";
 
-   try {
-     const hijriApiUrl = "https://api.myquran.com/v2/cal/hijr/?adj=-1";
-     const hijriResponse = await fetch(hijriApiUrl);
-     const hijriData = await hijriResponse.json();
+    try {
+      const hijriApiUrl = "https://api.myquran.com/v2/cal/hijr/?adj=-1";
+      const hijriResponse = await fetch(hijriApiUrl);
+      const hijriData = await hijriResponse.json();
 
-     if (hijriData.status === true) {
-       // Format: "5 Syawal 1446 H"
-       hijriDate = hijriData.data.date[1];
-       hijriDateForDb = hijriDate.replace(" H", "");
-       console.log(`📅 Hijri Date (for response): ${hijriDate}`);
-     } else {
-       return res.status(500).json({
-         success: false,
-         message: "Gagal mengambil tanggal hijriah",
-       });
-     }
-   } catch (error) {
-     console.error("⚠️ Error mengambil data tanggal hijriah:", error);
-     return res.status(500).json({
-       success: false,
-       message: "Gagal mengambil tanggal hijriah dari API",
-     });
-   }
+      if (hijriData.status === true) {
+        // Format: "5 Syawal 1446 H"
+        hijriDate = hijriData.data.date[1];
+        hijriDateForDb = hijriDate.replace(" H", "");
+        console.log(`📅 Hijri Date (for response): ${hijriDate}`);
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: "Gagal mengambil tanggal hijriah",
+        });
+      }
+    } catch (error) {
+      console.error("⚠️ Error mengambil data tanggal hijriah:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Gagal mengambil tanggal hijriah dari API",
+      });
+    }
 
     // ✅ Tanggal pencatatan Masehi disesuaikan dengan Maghrib
     let tanggalMasehi = todayMasehi;
@@ -905,12 +978,10 @@ const getDashboardPengawasUnreported = async (req, res) => {
       }
     } catch (error) {
       console.error("⚠️ Error mengambil data waktu sholat:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Kesalahan server dalam mengambil waktu sholat",
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Kesalahan server dalam mengambil waktu sholat",
+      });
     }
 
     // 🔹 Tentukan apakah sekarang sebelum atau sesudah Maghrib
@@ -997,7 +1068,6 @@ const getDashboardPengawasUnreported = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server Error" });
   }
 };
-
 
 module.exports = {
   getDashboardMurabbi,

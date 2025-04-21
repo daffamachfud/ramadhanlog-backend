@@ -176,7 +176,20 @@ exports.getDetailLaporanTholib = async (req, res) => {
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc");
 
-    const sortedResults = results.sort((a, b) => {
+      //Syawal
+    const resultsSyawal = await db("amalan_harian")
+    .join("amalan", "amalan.id", "amalan_harian.amalan_id")
+    .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
+    .where({
+      "amalan_harian.user_id": tholibId,
+      "amalan_harian.status": true,
+      "amalan.name": "Puasa Syawal 1446H",
+    })
+    .groupBy("amalan_harian.hijri_date")
+    .orderBy("amalan_harian.hijri_date", "asc");
+
+
+    const sortedResults = resultsSyawal.sort((a, b) => {
       return (
         parseInt(a.hijri_date.split(" ")[0]) -
         parseInt(b.hijri_date.split(" ")[0])
@@ -204,6 +217,7 @@ exports.getDetailLaporanTholib = async (req, res) => {
           .andOnVal("ah.user_id", tholibId)
           .andOnVal("ah.hijri_date", selectedHijriDateQuery);
       })
+      .where("a.status", "active") // ✅ tambahkan filter aktif
       .orderBy("ah.status", "asc");
 
     // 🔹 Format button dates
@@ -434,6 +448,8 @@ exports.getAmalanLaporanTholib = async (req, res) => {
     }
 
     // 🔍 Ambil amalan harian (hanya yang status true) berdasarkan user dan rentang 30 hari terakhir
+  
+  //Ramadhan
     const results = await db("amalan_harian")
       .select("hijri_date", db.raw("COUNT(*) as total"))
       .where({ user_id: tholibId, status: true })
@@ -441,9 +457,22 @@ exports.getAmalanLaporanTholib = async (req, res) => {
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc");
 
+      //Syawal
+    const resultsSyawal = await db("amalan_harian")
+    .join("amalan", "amalan.id", "amalan_harian.amalan_id")
+    .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
+    .where({
+      "amalan_harian.user_id": tholibId,
+      "amalan_harian.status": true,
+      "amalan.name": "Puasa Syawal 1446H",
+    })
+    .groupBy("amalan_harian.hijri_date")
+    .orderBy("amalan_harian.hijri_date", "asc");
+
+
     // 🔁 Mapping data berdasarkan 30 hari terakhir (0 jika tidak ada)
     const laporan = hijriDateList.map((date) => {
-      const existingData = results.find((row) => row.hijri_date === date);
+      const existingData = resultsSyawal.find((row) => row.hijri_date === date);
       return {
         hijri_date: date,
         total: existingData ? parseInt(existingData.total) : 0,
@@ -463,6 +492,7 @@ exports.getAmalanLaporanTholib = async (req, res) => {
           .andOnVal("ah.user_id", tholibId)
           .andOnVal("ah.hijri_date", selectedHijriDateQuery);
       })
+      .where("a.status", "active") // ✅ tambahkan filter aktif
       .orderBy("ah.status", "asc");
 
     // 🔍 Ambil nama user
