@@ -210,7 +210,6 @@ const getAmalanHarian = async (req, res) => {
     const [maghribHour, maghribMinute] = maghribTime.split(":").map(Number);
     const currentTimeInMinutes = currentHour * 60 + currentMinute;
     const maghribTimeInMinutes = maghribHour * 60 + maghribMinute;
-    const isAfterMaghrib = currentTimeInMinutes >= maghribTimeInMinutes;
 
     console.log(`⏰ Waktu sekarang (menit): ${currentTimeInMinutes}`);
     console.log(`🕌 Waktu Maghrib (menit): ${maghribTimeInMinutes}`);
@@ -252,6 +251,7 @@ const getAmalanHarian = async (req, res) => {
     // Ambil semua amalan
     const daftarAmalan = await db("amalan")
       .select("id", "name", "description", "type", "options", "parent_id")
+      .where("status","active")
       .orderBy("order_number", "asc");
 
     // Ambil amalan harian yang sudah dicatat dalam rentang hijri_date
