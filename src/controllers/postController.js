@@ -1,17 +1,34 @@
 const db = require("../config/db");
 
 const createPost = async (req, res) => {
-    const { title, content, type, media_url } = req.body;
+    // gunakan kolom sesuai schema: user_id, author_name, status
+    const { title, content, status } = req.body;
     const user_id = req.user.id; // diasumsikan sudah lewat verifyToken
-  
+
     if (!title || !content) {
       return res.status(400).json({ message: "Judul dan konten wajib diisi" });
     }
-  
+
     try {
-      const [post] = await db("posts")
-        .insert({ title, content, type, media_url, author_id: user_id })
-        .returning("*");
+      // ambil nama author dari tabel users
+      const author = await db('users').where({ id: user_id }).first('name');
+      if (!author) {
+        return res.status(404).json({ message: 'User author tidak ditemukan' });
+      }
+
+      const payload = {
+        title,
+        content,
+        user_id,
+        author_name: author.name,
+      };
+      if (typeof status === 'string' && status.length) {
+        payload.status = status; // optional, default di DB 'published'
+      }
+
+      const [post] = await db('posts')
+        .insert(payload)
+        .returning('*');
   
       res.status(201).json(post);
     } catch (error) {
