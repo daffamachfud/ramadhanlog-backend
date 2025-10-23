@@ -21,43 +21,58 @@ const defaultAllowedOrigins = [
   "https://www.haizumapp.com",
   "http://www.haizumapp.com",
 ];
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+const envOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-const effectiveAllowed = allowedOrigins.length ? allowedOrigins : defaultAllowedOrigins;
+const effectiveAllowed = Array.from(new Set([...defaultAllowedOrigins, ...envOrigins]));
+console.log('CORS allowlist:', effectiveAllowed);
 
-// Mendukung wildcard subdomain, contoh: https://*.haizumapp.com
 function isOriginAllowed(origin, patterns) {
-  if (!origin) return true; // non-browser clients
+  if (!origin) return true; // non-browser clients / same-origin proxied without Origin
   try {
     const url = new URL(origin);
-    const originExact = `${url.protocol}//${url.host}`;
+
+    // Normalisasi origin: abaikan port default
+    const isDefaultPort = (u) =>
+      (u.protocol === 'https:' && (u.port === '' || u.port === '443')) ||
+      (u.protocol === 'http:'  && (u.port === '' || u.port === '80'));
+    const normalizedOrigin = `${url.protocol}//${isDefaultPort(url) ? url.hostname : url.host}`;
+
     return patterns.some((pattern) => {
-      if (pattern === "*") return true;
-      // Exact match (dengan atau tanpa port)
-      if (!pattern.includes("*")) {
-        return origin === pattern || originExact === pattern;
-      }
+      if (pattern === '*') return true;
 
       // Wildcard support: https://*.domain.com atau *.domain.com
-      let proto = null;
-      let hostPattern = pattern;
-      if (pattern.includes("://")) {
-        const [p, rest] = pattern.split("://");
-        proto = `${p}:`; // e.g. 'https:'
-        hostPattern = rest;
+      if (pattern.includes('*')) {
+        let proto = null;
+        let hostPattern = pattern;
+        if (pattern.includes('://')) {
+          const [p, rest] = pattern.split('://');
+          proto = `${p}:`;
+          hostPattern = rest;
+        }
+        if (proto && url.protocol !== proto) return false;
+
+        if (hostPattern.startsWith('*.')) {
+          const domain = hostPattern.slice(2); // 'haizumapp.com'
+          return url.hostname === domain || url.hostname.endsWith(`.${domain}`);
+        }
+        // fallback sederhana ke perbandingan string
+        return origin === pattern || normalizedOrigin === pattern;
       }
-      if (proto && url.protocol !== proto) return false;
-      if (hostPattern.startsWith("*.")) {
-        const domain = hostPattern.slice(2); // 'haizumapp.com'
-        return url.hostname === domain || url.hostname.endsWith(`.${domain}`);
+
+      // Exact match: bandingkan setelah normalisasi (abaikan port default)
+      try {
+        const pUrl = new URL(pattern);
+        const normalizedPattern = `${pUrl.protocol}//${isDefaultPort(pUrl) ? pUrl.hostname : pUrl.host}`;
+        return normalizedOrigin === normalizedPattern;
+      } catch {
+        // jika pattern bukan URL penuh (jarang), bandingkan langsung
+        return origin === pattern || normalizedOrigin === pattern;
       }
-      // pola wildcard lain tidak didukung: fallback exact
-      return origin === pattern || originExact === pattern;
     });
-  } catch (e) {
-    // Jika parsing gagal, lakukan perbandingan sederhana
+  } catch {
+    // Jika parsing origin gagal, fallback ke inklusi sederhana
     return patterns.includes(origin);
   }
 }
