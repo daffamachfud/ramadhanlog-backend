@@ -35,9 +35,6 @@ app.use(cors({
 
 app.use(express.json());
 
-app.listen(5001, () => {
-    console.log("RamadhanLog Backend Running on port 5001");
-});
 app.get("/", (req, res) => {
     res.send("RamadhanLog Backend Running!");
 });
