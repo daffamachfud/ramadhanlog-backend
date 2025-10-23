@@ -1,41 +1,22 @@
 const db = require("../config/db");
 
 const createPost = async (req, res) => {
-    // 1. Ambil 'title', 'content', dan 'status' dari body request.
-    const { title, content, status } = req.body;
-    
-    // 2. Ambil user_id dari objek req.user yang ditambahkan oleh middleware verifyToken.
-    const user_id = req.user.id; 
-
-    // 3. Validasi input dasar
+    const { title, content, type, media_url } = req.body;
+    const user_id = req.user.id; // diasumsikan sudah lewat verifyToken
+  
     if (!title || !content) {
-      return res.status(400).json({ message: "Judul dan konten wajib diisi." });
+      return res.status(400).json({ message: "Judul dan konten wajib diisi" });
     }
-
+  
     try {
-      // 4. Ambil data user, khususnya nama, dari tabel 'users' berdasarkan user_id.
-      const author = await db("users").where({ id: user_id }).first();
-
-      // Validasi jika user tidak ditemukan di database
-      if (!author) {
-          return res.status(404).json({ message: "User author tidak ditemukan." });
-      }
-
-      // 5. Masukkan data ke dalam tabel 'posts'
       const [post] = await db("posts")
-        .insert({ 
-            title, 
-            content, 
-            status,                // <-- Simpan status yang dikirim frontend
-            user_id,      
-            author_name: author.name // <-- Gunakan nama dari hasil query tabel users
-        })
-        .returning("*"); // Mengembalikan semua kolom dari post yang baru dibuat
+        .insert({ title, content, type, media_url, author_id: user_id })
+        .returning("*");
   
       res.status(201).json(post);
     } catch (error) {
       console.error("Gagal membuat post:", error);
-      res.status(500).json({ message: "Terjadi kesalahan pada server saat membuat post." });
+      res.status(500).json({ message: "Terjadi kesalahan server" });
     }
   };
 
@@ -67,7 +48,7 @@ const createPost = async (req, res) => {
     try {
       const post = await db("posts")
         .select("posts.*", "users.name as author_name")
-        .leftJoin("users", "posts.user_id", "users.id")
+        .leftJoin("users", "posts.author_id", "users.id")
         .where("posts.id", id)
         .first();
   
@@ -78,7 +59,7 @@ const createPost = async (req, res) => {
       // Ambil komentar (nested 1 level untuk awal)
       const comments = await db("comments")
         .select("comments.*", "users.name as author_name")
-        .leftJoin("users", "comments.user_id", "users.id")
+        .leftJoin("users", "comments.author_id", "users.id")
         .where("comments.post_id", id)
         .orderBy("comments.created_at", "asc");
   

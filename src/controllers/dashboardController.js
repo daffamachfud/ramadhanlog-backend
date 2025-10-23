@@ -380,131 +380,82 @@ const getDashboardTholib = async (req, res) => {
 
     console.log(`📊 Tholib Id:`, tholibId);
 
-    //SYAWAL / Non-Syawal handling
-    let ringkasanHarian;
+    //SYAWAL
+    const totalAmalanSyawal = 6;
+
+    const result = await db.raw(
+      `
+    SELECT 
+      a.id AS amalan_id,
+      COUNT(ah.id) AS completed_count
+    FROM 
+      amalan a
+    JOIN 
+      amalan_harian ah ON a.id = ah.amalan_id
+    WHERE 
+      a.name = 'Puasa Syawal 1446H'
+      AND ah.hijri_date BETWEEN '1 Syawal 1446' AND '30 Syawal 1446'
+      AND ah.status = TRUE
+      AND ah.user_id = ?
+    GROUP BY 
+      a.id;
+  `,
+      [tholibId]
+    );
+
+    const totalSyawal = result.rows[0]?.completed_count || 0;
+    console.log("✅ Total Puasa Syawal:", totalSyawal);
+
+    const percentage =
+      ((totalSyawal / totalAmalanSyawal) * 100).toFixed(2) + "%";
+
+    const ringkasanHarian = {
+      date: hijriDate,
+      completed: parseInt(totalSyawal),
+      total: totalAmalanSyawal,
+      percentage,
+    };
+
+    console.log(`📊 Ringkasan Harian:`, ringkasanHarian);
+
     const fullDateRange = [];
     for (let i = 1; i <= 30; i++) {
       fullDateRange.push(`${i} ${hijriMonth} ${hijriYear}`);
     }
 
-    let dataPerminggu = [];
-    let allAmalan;
+    //LINE CHART
+    //RAMADHAN
+    const results = await db("amalan_harian")
+      .select("hijri_date", db.raw("COUNT(*) as total"))
+      .where({ user_id: tholibId, status: true })
+      .groupBy("hijri_date")
+      .orderBy("hijri_date", "asc");
 
-    if (hijriMonth === "Syawal") {
-      // Template Syawal: fokus pada Puasa Syawal
-      const [{ total: totalActiveAmalanStr }] = await db("amalan")
-        .where({ status: "active" })
-        .count("* as total");
-      const totalAmalanSyawal = parseInt(totalActiveAmalanStr, 10) || 0;
+    //Syawal
+    const resultsSyawal = await db("amalan_harian")
+      .join("amalan", "amalan.id", "amalan_harian.amalan_id")
+      .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
+      .where({
+        "amalan_harian.user_id": tholibId,
+        "amalan_harian.status": true,
+        "amalan.name": "Puasa Syawal 1446H",
+      })
+      .groupBy("amalan_harian.hijri_date")
+      .orderBy("amalan_harian.hijri_date", "asc");
 
-      const result = await db.raw(
-        `
-      SELECT 
-        a.id AS amalan_id,
-        COUNT(ah.id) AS completed_count
-      FROM 
-        amalan a
-      JOIN 
-        amalan_harian ah ON a.id = ah.amalan_id
-      WHERE 
-        a.name = 'Puasa Syawal 1446H'
-        AND ah.hijri_date BETWEEN '1 Syawal 1446' AND '30 Syawal 1446'
-        AND ah.status = TRUE
-        AND ah.user_id = ?
-      GROUP BY 
-        a.id;
-    `,
-        [tholibId]
-      );
-
-      const totalSyawal = result.rows[0]?.completed_count || 0;
-      console.log("✅ Total Puasa Syawal:", totalSyawal);
-
-      const percentage =
-        (totalAmalanSyawal > 0
-          ? ((totalSyawal / totalAmalanSyawal) * 100).toFixed(2)
-          : "0.00") + "%";
-
-      ringkasanHarian = {
-        date: hijriDate,
-        completed: parseInt(totalSyawal),
-        total: totalAmalanSyawal,
-        percentage,
+    const dataPerminggu = fullDateRange.map((date) => {
+      const existingData = resultsSyawal.find((row) => row.hijri_date === date);
+      return {
+        hijri_date: date,
+        total: existingData ? parseInt(existingData.total) : 0,
       };
+    });
 
-      console.log(`📊 Ringkasan Harian:`, ringkasanHarian);
+    console.log("📊 Data Perminggu (Hijri):", dataPerminggu);
 
-      const resultsSyawal = await db("amalan_harian")
-        .join("amalan", "amalan.id", "amalan_harian.amalan_id")
-        .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
-        .where({
-          "amalan_harian.user_id": tholibId,
-          "amalan_harian.status": true,
-          "amalan.name": "Puasa Syawal 1446H",
-        })
-        .groupBy("amalan_harian.hijri_date")
-        .orderBy("amalan_harian.hijri_date", "asc");
-
-      dataPerminggu = fullDateRange.map((date) => {
-        const existingData = resultsSyawal.find((row) => row.hijri_date === date);
-        return {
-          hijri_date: date,
-          total: existingData ? parseInt(existingData.total) : 0,
-        };
-      });
-
-      console.log("📊 Data Perminggu (Hijri):", dataPerminggu);
-
-      // Di bulan Syawal tampilkan semua amalan (sesuai sebelumnya)
-      allAmalan = await db("amalan").select("id", "name").orderBy("order_number", "asc");
-    } else {
-      // Di luar Ramadhan dan Syawal: tampilkan amalan yang aktif
-      const activeAmalan = await db("amalan")
-        .select("id", "name")
-        .where({ status: "active" })
-        .orderBy("order_number", "asc");
-
-      const activeAmalanIds = activeAmalan.map((a) => a.id);
-
-      const [{ total: totalCompletedTodayStr }] = await db("amalan_harian")
-        .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
-        .whereIn("amalan_id", activeAmalanIds)
-        .count("* as total");
-
-      const totalActive = activeAmalan.length;
-      const completedToday = parseInt(totalCompletedTodayStr, 10) || 0;
-
-      const percentage =
-        (totalActive > 0 ? ((completedToday / totalActive) * 100).toFixed(2) : "0.00") + "%";
-
-      ringkasanHarian = {
-        date: hijriDate,
-        completed: completedToday,
-        total: totalActive,
-        percentage,
-      };
-
-      console.log(`📊 Ringkasan Harian (Non-Ramadhan/Syawal):`, ringkasanHarian);
-
-      // Line chart: total catatan amalan aktif per hari pada bulan berjalan
-      const resultsActive = await db("amalan_harian")
-        .select("hijri_date", db.raw("COUNT(*) as total"))
-        .where({ user_id: tholibId, status: true })
-        .whereIn("amalan_id", activeAmalanIds)
-        .groupBy("hijri_date")
-        .orderBy("hijri_date", "asc");
-
-      dataPerminggu = fullDateRange.map((date) => {
-        const existingData = resultsActive.find((row) => row.hijri_date === date);
-        return {
-          hijri_date: date,
-          total: existingData ? parseInt(existingData.total) : 0,
-        };
-      });
-
-      // Untuk statusAmalan gunakan hanya yang aktif
-      allAmalan = activeAmalan;
-    }
+    const allAmalan = await db("amalan")
+      .select("id", "name")
+      .orderBy("order_number", "asc");
     const completedAmalan = await db("amalan_harian")
       .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
       .pluck("amalan_id");
