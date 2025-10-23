@@ -65,7 +65,7 @@ const createPost = async (req, res) => {
     try {
       const post = await db("posts")
         .select("posts.*", "users.name as author_name")
-        .leftJoin("users", "posts.author_id", "users.id")
+        .leftJoin("users", "posts.user_id", "users.id")
         .where("posts.id", id)
         .first();
   
@@ -76,7 +76,7 @@ const createPost = async (req, res) => {
       // Ambil komentar (nested 1 level untuk awal)
       const comments = await db("comments")
         .select("comments.*", "users.name as author_name")
-        .leftJoin("users", "comments.author_id", "users.id")
+        .leftJoin("users", "comments.user_id", "users.id")
         .where("comments.post_id", id)
         .orderBy("comments.created_at", "asc");
   
