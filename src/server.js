@@ -13,68 +13,25 @@ const postRoutes = require("./routes/postRoutes");
 dotenv.config();
 const app = express();
 
-// Ambil daftar origin dari .env (comma-separated). Fallback ke default list jika kosong.
-const defaultAllowedOrigins = [
-  "http://localhost:3000",
-  "https://haizumapp.com",
-  "http://haizumapp.com",
-  "https://www.haizumapp.com",
-  "http://www.haizumapp.com",
+const allowedOrigins = [
+    'http://localhost:3000',
+    'https://haizumapp.com',
+    'http://haizumapp.com',
+    'https://www.haizumapp.com',
+    'http://www.haizumapp.com'
 ];
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-const effectiveAllowed = allowedOrigins.length ? allowedOrigins : defaultAllowedOrigins;
 
-// Mendukung wildcard subdomain, contoh: https://*.haizumapp.com
-function isOriginAllowed(origin, patterns) {
-  if (!origin) return true; // non-browser clients
-  try {
-    const url = new URL(origin);
-    const originExact = `${url.protocol}//${url.host}`;
-    return patterns.some((pattern) => {
-      if (pattern === "*") return true;
-      // Exact match (dengan atau tanpa port)
-      if (!pattern.includes("*")) {
-        return origin === pattern || originExact === pattern;
-      }
-
-      // Wildcard support: https://*.domain.com atau *.domain.com
-      let proto = null;
-      let hostPattern = pattern;
-      if (pattern.includes("://")) {
-        const [p, rest] = pattern.split("://");
-        proto = `${p}:`; // e.g. 'https:'
-        hostPattern = rest;
-      }
-      if (proto && url.protocol !== proto) return false;
-      if (hostPattern.startsWith("*.")) {
-        const domain = hostPattern.slice(2); // 'haizumapp.com'
-        return url.hostname === domain || url.hostname.endsWith(`.${domain}`);
-      }
-      // pola wildcard lain tidak didukung: fallback exact
-      return origin === pattern || originExact === pattern;
-    });
-  } catch (e) {
-    // Jika parsing gagal, lakukan perbandingan sederhana
-    return patterns.includes(origin);
-  }
-}
-
-app.use(
-  cors({
+app.use(cors({
     origin: function (origin, callback) {
-      if (isOriginAllowed(origin, effectiveAllowed)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
     },
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-    credentials: true,
-  })
-);
+    credentials: true
+}));
 
 app.use(express.json());
 
