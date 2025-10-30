@@ -365,128 +365,73 @@ const getDashboardTholib = async (req, res) => {
       return res.status(500).json({ success: false, message: error.message });
     }
 
-    //DISINI SIAPKAN TEMPLATE PER BULAN
+    // Dinamis: gunakan amalan aktif sesuai halaqah/user
+    // 1) Ambil halaqah user (jika ada)
+    const rel = await db('relasi_halaqah_tholib').where({ tholib_id: tholibId }).first();
+    const halaqahId = rel ? rel.halaqah_id : null;
 
-    //INI UNTUK RAMADHAN
-    const [{ total }] = await db("amalan_harian")
+    // 2) Ambil daftar amalan aktif untuk user/halaqah
+    let activeQuery = db('amalan').select('id', 'name').where({ status: 'active' });
+    if (halaqahId) {
+      activeQuery = activeQuery.andWhere(function () {
+        this.where('is_for_all_halaqah', true)
+          .orWhereIn('id', db('amalan_halaqah').where({ halaqah_id: halaqahId }).select('amalan_id'));
+      });
+    } else {
+      activeQuery = activeQuery.andWhere('is_for_all_halaqah', true);
+    }
+    const activeAmalan = await activeQuery.orderBy('order_number', 'asc');
+    const activeAmalanIds = activeAmalan.map((a) => a.id);
+
+    // 3) Ringkasan harian: completed vs total aktif
+    const [{ total: completedTodayStr }] = await db('amalan_harian')
       .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
-      .count("* as total");
-
-    console.log(`✅ Total Amalan Hari Ini: ${total}`);
-
-    const totalAmalan = 20;
-
-    //END RAMADHAN
-
-    console.log(`📊 Tholib Id:`, tholibId);
-
-    //SYAWAL
-    const totalAmalanSyawal = 6;
-
-    const result = await db.raw(
-      `
-    SELECT 
-      a.id AS amalan_id,
-      COUNT(ah.id) AS completed_count
-    FROM 
-      amalan a
-    JOIN 
-      amalan_harian ah ON a.id = ah.amalan_id
-    WHERE 
-      a.name = 'Puasa Syawal 1446H'
-      AND ah.hijri_date BETWEEN '1 Syawal 1446' AND '30 Syawal 1446'
-      AND ah.status = TRUE
-      AND ah.user_id = ?
-    GROUP BY 
-      a.id;
-  `,
-      [tholibId]
-    );
-
-    const totalSyawal = result.rows[0]?.completed_count || 0;
-    console.log("✅ Total Puasa Syawal:", totalSyawal);
-
-    const percentage =
-      ((totalSyawal / totalAmalanSyawal) * 100).toFixed(2) + "%";
+      .whereIn('amalan_id', activeAmalanIds)
+      .count('* as total');
+    const completedToday = parseInt(completedTodayStr, 10) || 0;
+    const totalActive = activeAmalan.length;
+    const percentage = (totalActive > 0 ? ((completedToday / totalActive) * 100).toFixed(2) : '0.00') + '%';
 
     const ringkasanHarian = {
       date: hijriDate,
-      completed: parseInt(totalSyawal),
-      total: totalAmalanSyawal,
+      completed: completedToday,
+      total: totalActive,
       percentage,
     };
 
-    console.log(`📊 Ringkasan Harian:`, ringkasanHarian);
-
+    // 4) Line chart bulan berjalan (hanya amalan aktif)
     const fullDateRange = [];
-    for (let i = 1; i <= 30; i++) {
-      fullDateRange.push(`${i} ${hijriMonth} ${hijriYear}`);
-    }
+    for (let i = 1; i <= 30; i++) fullDateRange.push(`${i} ${hijriMonth} ${hijriYear}`);
 
-    //LINE CHART
-    //RAMADHAN
-    const results = await db("amalan_harian")
-      .select("hijri_date", db.raw("COUNT(*) as total"))
+    const resultsActive = await db('amalan_harian')
+      .select('hijri_date', db.raw('COUNT(*) as total'))
       .where({ user_id: tholibId, status: true })
-      .groupBy("hijri_date")
-      .orderBy("hijri_date", "asc");
-
-    //Syawal
-    const resultsSyawal = await db("amalan_harian")
-      .join("amalan", "amalan.id", "amalan_harian.amalan_id")
-      .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
-      .where({
-        "amalan_harian.user_id": tholibId,
-        "amalan_harian.status": true,
-        "amalan.name": "Puasa Syawal 1446H",
-      })
-      .groupBy("amalan_harian.hijri_date")
-      .orderBy("amalan_harian.hijri_date", "asc");
+      .whereIn('amalan_id', activeAmalanIds)
+      .andWhere('hijri_date', 'like', `% ${hijriMonth} ${hijriYear}`)
+      .groupBy('hijri_date')
+      .orderBy('hijri_date', 'asc');
 
     const dataPerminggu = fullDateRange.map((date) => {
-      const existingData = resultsSyawal.find((row) => row.hijri_date === date);
-      return {
-        hijri_date: date,
-        total: existingData ? parseInt(existingData.total) : 0,
-      };
+      const existing = resultsActive.find((row) => row.hijri_date === date);
+      return { hijri_date: date, total: existing ? parseInt(existing.total) : 0 };
     });
 
-    console.log("📊 Data Perminggu (Hijri):", dataPerminggu);
-
-    const allAmalan = await db("amalan")
-      .select("id", "name")
-      .orderBy("order_number", "asc");
-    const completedAmalan = await db("amalan_harian")
+    // 5) Status amalan (hanya yang aktif)
+    const completedAmalan = await db('amalan_harian')
       .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
-      .pluck("amalan_id");
-
-    const completed = allAmalan.filter((amalan) =>
-      completedAmalan.includes(amalan.id)
-    );
-    const notCompleted = allAmalan.filter(
-      (amalan) => !completedAmalan.includes(amalan.id)
-    );
-
-    const statusAmalan = {
-      completed: completed.map((a) => a.name),
-      notCompleted: notCompleted.map((a) => a.name),
-    };
-
-    console.log(`📌 Amalan Selesai:`, statusAmalan.completed);
-    console.log(`📌 Amalan Belum Selesai:`, statusAmalan.notCompleted);
+      .pluck('amalan_id');
+    const completed = activeAmalan.filter((a) => completedAmalan.includes(a.id));
+    const notCompleted = activeAmalan.filter((a) => !completedAmalan.includes(a.id));
+    const statusAmalan = { completed: completed.map((a) => a.name), notCompleted: notCompleted.map((a) => a.name) };
 
     const responseData = {
       ringkasanHarian,
-      line_chart: dataPerminggu.map((item) => ({
-        name: `${item.hijri_date}`,
-        value: item.total,
-      })),
+      line_chart: dataPerminggu.map((it) => ({ name: `${it.hijri_date}`, value: it.total })),
       statusAmalan,
-      prayerTimes, // ✅ `HijriDate` sudah ada di dalam objek ini
+      prayerTimes,
     };
 
-    // ✅ LOG AKHIR SEBELUM RESPONSE
-    console.log("🚀 Final Response:", JSON.stringify(responseData, null, 2));
+    console.log('🚀 Final Response:', JSON.stringify(responseData, null, 2));
 
     res.json(responseData);
   } catch (error) {
