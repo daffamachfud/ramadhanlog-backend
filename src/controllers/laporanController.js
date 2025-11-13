@@ -2,6 +2,126 @@ const db = require("../config/db");
 const moment = require("moment-hijri");
 moment.locale("in");
 
+const HIJRI_MONTH_VARIANTS = {
+  "Muharram": ["Muharram", "Muharam"],
+  Safar: ["Safar"],
+  "Rabiul Awal": [
+    "Rabiul Awal",
+    "Rabiul Awwal",
+    "Rabi'ul Awal",
+    "Rabi al-Awwal",
+  ],
+  "Rabiul Akhir": [
+    "Rabiul Akhir",
+    "Rabiul Tsani",
+    "Rabiul Thani",
+    "Rabi'ul Akhir",
+    "Rabi al-Thani",
+  ],
+  "Jumadil Awal": [
+    "Jumadil Awal",
+    "Jumadil Awwal",
+    "Jumadil",
+    "Jumada al-Awwal",
+    "Jumadil Ula",
+  ],
+  "Jumadil Akhir": [
+    "Jumadil Akhir",
+    "Jumadil Tsani",
+    "Jumadil Thani",
+    "Jumada al-Akhirah",
+    "Jumadil Ukhra",
+  ],
+  Rajab: ["Rajab"],
+  Syaban: ["Syaban", "Sya'ban", "Sha'ban"],
+  Ramadhan: ["Ramadhan", "Ramadan", "Ramazan"],
+  Syawal: ["Syawal", "Syawwal", "Shawwal"],
+  Zulkaidah: ["Zulkaidah", "Dzulqaidah", "Zulqaidah", "Zulqa'dah"],
+  Zulhijjah: ["Zulhijjah", "Dzulhijjah", "Zulhijah", "Dzulhijah"],
+};
+
+const HIJRI_MONTH_ALIAS = Object.entries(HIJRI_MONTH_VARIANTS).reduce(
+  (acc, [canonical, variants]) => {
+    variants.forEach((variant) => {
+      acc[variant.toLowerCase()] = canonical;
+    });
+    return acc;
+  },
+  {}
+);
+
+const normalizeHijriMonth = (month = "") => {
+  if (!month) return month;
+  const found = HIJRI_MONTH_ALIAS[month.toLowerCase()];
+  return found || month;
+};
+
+const buildHijriDateVariants = (day, month, year) => {
+  if (!month || !year) return [];
+  const variants = new Set();
+  const monthVariants = HIJRI_MONTH_VARIANTS[month] || [month];
+  monthVariants.forEach((variantMonth) => {
+    const base = `${day} ${variantMonth} ${year}`.trim();
+    variants.add(base);
+    variants.add(`${base} H`.trim());
+  });
+  return Array.from(variants);
+};
+
+const parseHijriDateSafe = (
+  rawDate = "",
+  { defaultDay = 1, defaultMonth = "", defaultYear = "" } = {}
+) => {
+  const cleaned = (rawDate || "").replace(" H", "").trim();
+  const tokens = cleaned.split(" ").filter(Boolean);
+
+  let day = tokens.length ? parseInt(tokens[0], 10) : parseInt(defaultDay, 10);
+  if (Number.isNaN(day) || !day) {
+    day = parseInt(defaultDay, 10) || 1;
+  }
+
+  let yearCandidate = tokens.length ? tokens[tokens.length - 1] : defaultYear;
+  let year = parseInt(yearCandidate, 10);
+  if (Number.isNaN(year) || !year) {
+    year = parseInt(defaultYear, 10) || defaultYear || "";
+  }
+  year = `${year}`.trim();
+
+  let monthTokens = tokens.slice(1, tokens.length - 1);
+  if (!monthTokens.length && tokens.length >= 2) {
+    monthTokens = tokens.slice(1);
+  }
+  let monthRaw = monthTokens.join(" ").trim();
+  if (!monthRaw) {
+    monthRaw = defaultMonth || "";
+  }
+  const month = normalizeHijriMonth(monthRaw);
+  const formatted = [day, month, year].filter(Boolean).join(" ").trim();
+  const variants = buildHijriDateVariants(day, month, year);
+
+  return {
+    day,
+    month,
+    year,
+    formatted,
+    variants,
+  };
+};
+
+const buildMonthDayVariants = (month, year, maxDay = 30) => {
+  if (!month || !year) return [];
+  const variants = new Set();
+  const monthVariants = HIJRI_MONTH_VARIANTS[month] || [month];
+  for (let i = 1; i <= maxDay; i++) {
+    monthVariants.forEach((variantMonth) => {
+      const base = `${i} ${variantMonth} ${year}`.trim();
+      variants.add(base);
+      variants.add(`${base} H`.trim());
+    });
+  }
+  return Array.from(variants);
+};
+
 // Ambil daftar tholib berdasarkan filter nama/halaqah
 exports.getLaporanTholib = async (req, res) => {
   try {
@@ -19,8 +139,13 @@ exports.getLaporanTholib = async (req, res) => {
     }
 
     const hijriDateToday = hijriData.data.date[1];
-    const [, hijriMonth, hijriYear] = hijriDateToday.split(" ");
+    const {
+      month: hijriMonth,
+      year: hijriYear,
+      formatted: hijriTodayCanonical,
+    } = parseHijriDateSafe(hijriDateToday);
     const fullHijriRange = Array.from({ length: 30 }, (_, i) => `${i + 1} ${hijriMonth} ${hijriYear}`);
+    const monthDayVariants = buildMonthDayVariants(hijriMonth, hijriYear);
 
     // 2. Ambil data tholib yang ada di halaqah user ini
     let query = db("users as u")
@@ -41,27 +166,36 @@ exports.getLaporanTholib = async (req, res) => {
 
     // 3. Ambil seluruh data amalan_harian untuk tholib yang ditemukan, dalam bulan hijriah saat ini
     const tholibIds = tholibList.map((t) => t.id);
-    const bulanPattern = `%${hijriMonth} ${hijriYear}`; // contoh: %Syawal 1446
+    const amalanDataQuery = db("amalan_harian")
+      .whereIn("user_id", tholibIds)
+      .andWhere("status", true)
+      .select("user_id", "hijri_date")
+      .groupBy("user_id", "hijri_date")
+      .count("* as total");
 
-    const amalanData = await db("amalan_harian")
-    .whereIn("user_id", tholibIds)
-    .andWhere("hijri_date", "like", bulanPattern)
-    .andWhere("status", true) // ✅ hanya ambil yang sudah dicentang
-    .select("user_id", "hijri_date")
-    .groupBy("user_id", "hijri_date")
-    .count("* as total");
+    if (monthDayVariants.length > 0) {
+      amalanDataQuery.whereIn("hijri_date", monthDayVariants);
+    } else {
+      amalanDataQuery.andWhere("hijri_date", "like", `% ${hijriMonth} ${hijriYear}`);
+    }
+
+    const amalanData = await amalanDataQuery;
+
+    const aggregatedAmalan = {};
+    amalanData.forEach((row) => {
+      const key = row.user_id;
+      const { formatted } = parseHijriDateSafe(row.hijri_date);
+      const canonicalDate = formatted || row.hijri_date;
+      if (!aggregatedAmalan[key]) aggregatedAmalan[key] = {};
+      aggregatedAmalan[key][canonicalDate] = parseInt(row.total, 10);
+    });
 
     // 4. Susun hasil akhir per tholib
     const laporan = tholibList.map((tholib) => {
-      const dataPerHari = fullHijriRange.map((tanggal) => {
-        const item = amalanData.find(
-          (a) => a.user_id === tholib.id && a.hijri_date === tanggal
-        );
-        return {
-          name: tanggal,
-          value: item ? parseInt(item.total) : 0,
-        };
-      });
+      const dataPerHari = fullHijriRange.map((tanggal) => ({
+        name: tanggal,
+        value: aggregatedAmalan[tholib.id]?.[tanggal] || 0,
+      }));
 
       console.log("hasil laporan tholib amalan : ",dataPerHari)
 
@@ -127,7 +261,11 @@ exports.getDetailLaporanTholib = async (req, res) => {
 
     // 🔹 Ambil tanggal Hijriah hari ini dari API MyQuran
     const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr/?adj=-1`;
-    let hijriCurrentDate, hijriCurrentDay, hijriCurrentMonth, hijriCurrentYear;
+    let hijriCurrentDate,
+      hijriCurrentDay,
+      hijriCurrentMonth,
+      hijriCurrentYear,
+      hijriCurrentVariants;
 
     try {
       const hijriResponse = await fetch(hijriApiUrl);
@@ -135,12 +273,15 @@ exports.getDetailLaporanTholib = async (req, res) => {
 
       if (hijriData.status === true) {
         const fullHijriDate = hijriData.data.date[1]; // "6 Syawal 1446 H"
-        hijriCurrentDate = fullHijriDate.replace(" H", ""); // "6 Syawal 1446"
-        const [day, month, year] = hijriCurrentDate.split(" ");
-
-        hijriCurrentDay = parseInt(day);
-        hijriCurrentMonth = month;
-        hijriCurrentYear = year;
+        const parsedCurrent = parseHijriDateSafe(fullHijriDate);
+        hijriCurrentDate = parsedCurrent.formatted;
+        hijriCurrentDay = parsedCurrent.day;
+        hijriCurrentMonth = parsedCurrent.month;
+        hijriCurrentYear = parsedCurrent.year;
+        hijriCurrentVariants = buildMonthDayVariants(
+          hijriCurrentMonth,
+          hijriCurrentYear
+        );
 
         console.log(`📅 Tanggal Hijriah Saat Ini: ${hijriCurrentDate}`);
       } else {
@@ -159,25 +300,45 @@ exports.getDetailLaporanTholib = async (req, res) => {
     }
 
     // ✅ Gunakan tanggal dari request atau fallback ke hari ini
-    const selectedHijriDate = tanggal || hijriCurrentDate;
-    const selectedHijriDateQuery = selectedHijriDate.replace(" H", "").trim();
-    console.log("Selected date query : ", selectedHijriDateQuery);
+    const selectedParsed = parseHijriDateSafe(tanggal, {
+      defaultDay: hijriCurrentDay,
+      defaultMonth: hijriCurrentMonth,
+      defaultYear: hijriCurrentYear,
+    });
+    const selectedHijriDate = selectedParsed.formatted;
+    const selectedHijriVariants = selectedParsed.variants;
+    console.log("Selected date query : ", selectedHijriDate);
 
     // 🔹 Buat rentang tanggal dinamis berdasarkan hari saat ini
     const fullDateRange = [];
     for (let i = 1; i <= 30; i++) {
       fullDateRange.push(`${i} ${hijriCurrentMonth} ${hijriCurrentYear}`);
     }
+    const monthDayVariants =
+      hijriCurrentVariants && hijriCurrentVariants.length
+        ? hijriCurrentVariants
+        : buildMonthDayVariants(hijriCurrentMonth, hijriCurrentYear);
 
     // 🔹 Ambil data amalan harian
     const results = await db("amalan_harian")
       .select("hijri_date", db.raw("COUNT(*) as total"))
       .where({ user_id: tholibId, status: true })
+      .modify((qb) => {
+        if (monthDayVariants && monthDayVariants.length) {
+          qb.whereIn("hijri_date", monthDayVariants);
+        } else {
+          qb.andWhere(
+            "hijri_date",
+            "like",
+            `% ${hijriCurrentMonth} ${hijriCurrentYear}`
+          );
+        }
+      })
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc");
 
       //Syawal
-    const resultsSyawal = await db("amalan_harian")
+    const resultsSyawalQuery = db("amalan_harian")
     .join("amalan", "amalan.id", "amalan_harian.amalan_id")
     .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
     .where({
@@ -188,21 +349,27 @@ exports.getDetailLaporanTholib = async (req, res) => {
     .groupBy("amalan_harian.hijri_date")
     .orderBy("amalan_harian.hijri_date", "asc");
 
+    if (monthDayVariants && monthDayVariants.length) {
+      resultsSyawalQuery.whereIn("amalan_harian.hijri_date", monthDayVariants);
+    }
 
-    const sortedResults = resultsSyawal.sort((a, b) => {
-      return (
-        parseInt(a.hijri_date.split(" ")[0]) -
-        parseInt(b.hijri_date.split(" ")[0])
-      );
+    const resultsSyawal = await resultsSyawalQuery;
+
+    const syawalAggregated = {};
+    resultsSyawal.forEach((row) => {
+      const { formatted } = parseHijriDateSafe(row.hijri_date, {
+        defaultMonth: hijriCurrentMonth,
+        defaultYear: hijriCurrentYear,
+      });
+      const key = formatted || row.hijri_date;
+      syawalAggregated[key] =
+        (syawalAggregated[key] || 0) + parseInt(row.total, 10);
     });
 
-    const laporan = fullDateRange.map((date) => {
-      const existingData = sortedResults.find((row) => row.hijri_date === date);
-      return {
-        hijri_date: date,
-        total: existingData ? parseInt(existingData.total) : 0,
-      };
-    });
+    const laporan = fullDateRange.map((date) => ({
+      hijri_date: date,
+      total: syawalAggregated[date] || 0,
+    }));
 
     // 🔹 Ambil daftar amalan untuk tanggal yang dipilih
     const amalanList = await db("amalan as a")
@@ -213,16 +380,35 @@ exports.getDetailLaporanTholib = async (req, res) => {
         db.raw("COALESCE(ah.status, false) as status")
       )
       .leftJoin("amalan_harian as ah", function () {
-        this.on("a.id", "=", "ah.amalan_id")
-          .andOnVal("ah.user_id", tholibId)
-          .andOnVal("ah.hijri_date", selectedHijriDateQuery);
+        this.on("a.id", "=", "ah.amalan_id").andOnVal(
+          "ah.user_id",
+          tholibId
+        );
       })
-      .where("a.status", "active") // ✅ tambahkan filter aktif
+      .where("a.status", "active")
+      .whereIn("a.type", ["checklist", "dropdown"])
+      .modify((qb) => {
+        if (selectedHijriVariants && selectedHijriVariants.length) {
+          qb.andWhere(function () {
+            this.whereNull("ah.hijri_date").orWhereIn(
+              "ah.hijri_date",
+              selectedHijriVariants
+            );
+          });
+        } else {
+          qb.andWhere(function () {
+            this.whereNull("ah.hijri_date").orWhere(
+              "ah.hijri_date",
+              selectedHijriDate
+            );
+          });
+        }
+      })
       .orderBy("ah.status", "asc");
 
     // 🔹 Format button dates
     const buttonDates = Array.from({ length: hijriCurrentDay }, (_, i) => {
-      return `${i + 1} ${hijriCurrentMonth}`;
+      return `${i + 1} ${hijriCurrentMonth} ${hijriCurrentYear}`;
     });
 
     // 🔹 Format final response
@@ -396,16 +582,25 @@ exports.getDetailLaporanTholibMingguan = async (req, res) => {
 
 exports.getAmalanLaporanTholib = async (req, res) => {
   try {
-    console.log("⏰ Mengambil Data Detail Laporan Tholib");
+    console.log("========= 📊 getAmalanLaporanTholib =========");
 
-    const { tanggal } = req.body;
+    const { tanggal, tanggal_day, tanggal_month, tanggal_year } = req.body;
     const tholibId = req.user.id;
-    console.log("🔍 User ID:", tholibId);
-    console.log("📅 Tanggal yang diminta:", tanggal);
+    console.log("🔑 User ID:", tholibId);
+    console.log("📩 Payload | tanggal:", tanggal || "-", "| split:", {
+      day: tanggal_day || "-",
+      month: tanggal_month || "-",
+      year: tanggal_year || "-",
+    });
 
     // ✅ Ambil tanggal Hijriah dari API MyQuran (adj=-1)
     let hijriCurrentDate = "";
     let hijriDateList = [];
+
+    let canonicalMonth = "";
+    let canonicalYear = "";
+    let canonicalDay = 1;
+    let hijriDateVariantsList = [];
 
     try {
       const today = new Date().toISOString().split("T")[0];
@@ -420,15 +615,16 @@ exports.getAmalanLaporanTholib = async (req, res) => {
 
       // Ambil data tanggal dari response API
       const hijriDateString = hijriData.data.date[1]; // contoh: "5 Syawal 1446 H"
-      hijriCurrentDate = hijriDateString.replace(" H", "").trim(); // "5 Syawal 1446"
+      const parsedCurrent = parseHijriDateSafe(hijriDateString);
+      hijriCurrentDate = parsedCurrent.formatted;
+      canonicalDay = parsedCurrent.day;
+      canonicalMonth = parsedCurrent.month;
+      canonicalYear = parsedCurrent.year;
+
+      hijriDateList = Array.from({ length: 30 }, (_, i) => `${i + 1} ${canonicalMonth} ${canonicalYear}`);
+      hijriDateVariantsList = buildMonthDayVariants(canonicalMonth, canonicalYear);
+
       console.log("📅 Tanggal Hijriah Hari Ini:", hijriCurrentDate);
-
-      const currentDay = hijriData.data.num[0]; // angka hari (misal: 5)
-      const currentMonth = hijriDateString.split(" ")[1]; // nama bulan hijriah: Syawal
-      const currentYear = hijriData.data.num[6]; // tahun hijriah: 1446
-
-      // Buat daftar 30 hari kebelakang (asumsi semua dalam bulan yang sama)
-      hijriDateList = Array.from({ length: 30 }, (_, i) => `${i + 1} ${currentMonth} ${currentYear}`);
     } catch (error) {
       console.error("❌ Gagal mengambil tanggal Hijriah:", error.message);
       return res.status(500).json({
@@ -438,14 +634,20 @@ exports.getAmalanLaporanTholib = async (req, res) => {
     }
 
     // ✅ Gunakan tanggal dari user (kalau ada), atau default ke tanggal Hijriah hari ini
-    const selectedHijriDate = tanggal || hijriCurrentDate;
-    console.log("📅 Selected date:", selectedHijriDate);
-
-    // Untuk query ke DB, pastikan ada tahun hijriahnya
-    let selectedHijriDateQuery = selectedHijriDate.replace(/H$/, "").trim();
-    if (!selectedHijriDateQuery.match(/\d{4}$/)) {
-      selectedHijriDateQuery += ` ${hijriDateList[0].split(" ")[2]}`; // Tambahkan tahun
+    let selectedDateInput = tanggal;
+    if (!selectedDateInput && tanggal_day && tanggal_month && tanggal_year) {
+      selectedDateInput = `${tanggal_day} ${tanggal_month} ${tanggal_year}`;
     }
+
+    const selectedParsed = parseHijriDateSafe(selectedDateInput, {
+      defaultDay: canonicalDay,
+      defaultMonth: canonicalMonth,
+      defaultYear: canonicalYear,
+    });
+    const selectedHijriDate = selectedParsed.formatted || hijriCurrentDate;
+    const selectedHijriVariants = selectedParsed.variants;
+    console.log("🎯 Tanggal digunakan (kanonik):", selectedHijriDate);
+    console.log("🎯 Variasi tanggal dicari:", selectedHijriVariants);
 
     // 🔍 Ambil amalan harian (hanya yang status true) berdasarkan user dan rentang 30 hari terakhir
   
@@ -453,31 +655,34 @@ exports.getAmalanLaporanTholib = async (req, res) => {
     const results = await db("amalan_harian")
       .select("hijri_date", db.raw("COUNT(*) as total"))
       .where({ user_id: tholibId, status: true })
-      .whereIn("hijri_date", hijriDateList)
+      .modify((qb) => {
+        if (hijriDateVariantsList && hijriDateVariantsList.length) {
+          qb.whereIn("hijri_date", hijriDateVariantsList);
+        } else {
+          qb.whereIn("hijri_date", hijriDateList);
+        }
+      })
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc");
 
       //Syawal
-    const resultsSyawal = await db("amalan_harian")
-    .join("amalan", "amalan.id", "amalan_harian.amalan_id")
-    .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
-    .where({
-      "amalan_harian.user_id": tholibId,
-      "amalan_harian.status": true,
-      "amalan.name": "Puasa Syawal 1446H",
-    })
-    .groupBy("amalan_harian.hijri_date")
-    .orderBy("amalan_harian.hijri_date", "asc");
-
+    // Gunakan hasil umum (results) untuk seluruh amalan aktif
+    const aggregatedCounts = {};
+    results.forEach((row) => {
+      const { formatted } = parseHijriDateSafe(row.hijri_date, {
+        defaultMonth: canonicalMonth,
+        defaultYear: canonicalYear,
+      });
+      const key = formatted || row.hijri_date;
+      aggregatedCounts[key] =
+        (aggregatedCounts[key] || 0) + parseInt(row.total, 10);
+    });
 
     // 🔁 Mapping data berdasarkan 30 hari terakhir (0 jika tidak ada)
-    const laporan = hijriDateList.map((date) => {
-      const existingData = resultsSyawal.find((row) => row.hijri_date === date);
-      return {
-        hijri_date: date,
-        total: existingData ? parseInt(existingData.total) : 0,
-      };
-    });
+    const laporan = hijriDateList.map((date) => ({
+      hijri_date: date,
+      total: aggregatedCounts[date] || 0,
+    }));
 
     // 🔍 Ambil daftar amalan dan status berdasarkan selectedHijriDate
     const amalanList = await db("amalan as a")
@@ -488,11 +693,30 @@ exports.getAmalanLaporanTholib = async (req, res) => {
         db.raw("COALESCE(ah.status, false) as status")
       )
       .leftJoin("amalan_harian as ah", function () {
-        this.on("a.id", "=", "ah.amalan_id")
-          .andOnVal("ah.user_id", tholibId)
-          .andOnVal("ah.hijri_date", selectedHijriDateQuery);
+        this.on("a.id", "=", "ah.amalan_id").andOnVal(
+          "ah.user_id",
+          tholibId
+        );
       })
-      .where("a.status", "active") // ✅ tambahkan filter aktif
+      .where("a.status", "active")
+      .whereIn("a.type", ["checklist", "dropdown"])
+      .modify((qb) => {
+        if (selectedHijriVariants && selectedHijriVariants.length) {
+          qb.andWhere(function () {
+            this.whereNull("ah.hijri_date").orWhereIn(
+              "ah.hijri_date",
+              selectedHijriVariants
+            );
+          });
+        } else {
+          qb.andWhere(function () {
+            this.whereNull("ah.hijri_date").orWhere(
+              "ah.hijri_date",
+              selectedHijriDate
+            );
+          });
+        }
+      })
       .orderBy("ah.status", "asc");
 
     // 🔍 Ambil nama user
@@ -500,7 +724,7 @@ exports.getAmalanLaporanTholib = async (req, res) => {
     const name = user ? user.name : null;
 
     // 🔢 Ambil angka tanggal dari hijriCurrentDate (misal: 5 Syawal -> 5)
-    const hijriCurrentDay = parseInt(hijriCurrentDate.split(" ")[0]) || 1;
+    const hijriCurrentDay = canonicalDay || 1;
 
     // 📦 Format final response
     const response = {
@@ -533,7 +757,14 @@ exports.getAmalanLaporanTholib = async (req, res) => {
         status: amalan.status === true,
       }));
 
-    console.log("📊 Data Response:", response);
+    console.log("📤 Ringkasan Response:", {
+      hijri_current_date: response.hijri_current_date,
+      selected_date: response.selected_date,
+      total_amalan: response.amalan_list.length,
+      button_dates: response.button_dates,
+    });
+    console.log("📤 Contoh amalan", response.amalan_list);
+    console.log("========= ✅ getAmalanLaporanTholib Selesai =========");
     return res.json(response);
   } catch (error) {
     console.error("❌ Error get detail laporan tholib:", error);
@@ -543,6 +774,3 @@ exports.getAmalanLaporanTholib = async (req, res) => {
     });
   }
 };
-
-
-

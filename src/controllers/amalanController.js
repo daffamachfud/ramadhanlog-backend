@@ -3,6 +3,133 @@ const moment = require("moment-hijri");
 const fetch = require("node-fetch");
 moment.locale("en");
 
+const HIJRI_MONTHS_ID = [
+  "Muharram",
+  "Safar",
+  "Rabiul Awal",
+  "Rabiul Akhir",
+  "Jumadil Awal",
+  "Jumadil Akhir",
+  "Rajab",
+  "Syaban",
+  "Ramadhan",
+  "Syawal",
+  "Zulkaidah",
+  "Zulhijjah",
+];
+
+const HIJRI_MONTH_VARIANTS = {
+  "Muharram": ["Muharram"],
+  "Safar": ["Safar"],
+  "Rabiul Awal": [
+    "Rabiul Awal",
+    "Rabiul Awwal",
+    "Rabi al-Awwal",
+    "Rabi'ul Awwal",
+    "Rabiulawal",
+  ],
+  "Rabiul Akhir": [
+    "Rabiul Akhir",
+    "Rabiul Tsani",
+    "Rabiul Thani",
+    "Rabi al-Akhir",
+    "Rabi'ul Akhir",
+  ],
+  "Jumadil Awal": [
+    "Jumadil Awal",
+    "Jumadil Awwal",
+    "Jumada al-Awwal",
+    "Jumadil Ula",
+  ],
+  "Jumadil Akhir": [
+    "Jumadil Akhir",
+    "Jumadil Tsani",
+    "Jumadil Thani",
+    "Jumada al-Akhirah",
+    "Jumadil Ukhra",
+  ],
+  "Rajab": ["Rajab"],
+  "Syaban": ["Syaban", "Sya'ban", "Sha'ban"],
+  "Ramadhan": ["Ramadhan", "Ramadan", "Ramazan"],
+  "Syawal": ["Syawal", "Syawwal", "Shawwal"],
+  "Zulkaidah": ["Zulkaidah", "Dzulqaidah", "Zulqaidah", "Zulqa'dah"],
+  "Zulhijjah": ["Zulhijjah", "Dzulhijjah", "Zulhijah", "Dzulhijah"],
+};
+
+const HIJRI_MONTH_ALIAS_LOOKUP = Object.entries(HIJRI_MONTH_VARIANTS).reduce(
+  (acc, [canonical, variants]) => {
+    variants.forEach((variant) => {
+      acc[variant.toLowerCase()] = canonical;
+    });
+    return acc;
+  },
+  {}
+);
+
+const formatHijriDateId = (hijriMoment) => {
+  if (!hijriMoment || !hijriMoment.isValid()) return "";
+  const day = hijriMoment.iDate();
+  const monthName = HIJRI_MONTHS_ID[hijriMoment.iMonth()] || "";
+  const year = hijriMoment.iYear();
+  return `${day} ${monthName} ${year}`.trim();
+};
+
+const hijriMomentFromApiNumbers = (numArray = []) => {
+  if (!Array.isArray(numArray) || numArray.length < 7) return null;
+  const hijriDay = Number(numArray[4]);
+  const hijriMonth = Number(numArray[5]);
+  const hijriYear = Number(numArray[6]);
+  if (!hijriDay || !hijriMonth || !hijriYear) return null;
+  return moment()
+    .startOf("day")
+    .iYear(hijriYear)
+    .iMonth(hijriMonth - 1)
+    .iDate(hijriDay);
+};
+
+const hijriMomentFromString = (dateString = "") => {
+  const cleaned = dateString.replace(" H", "").trim();
+  if (!cleaned) return null;
+  const parts = cleaned.split(" ").filter(Boolean);
+  if (parts.length < 3) return null;
+  const day = parseInt(parts.shift(), 10);
+  const year = parseInt(parts.pop(), 10);
+  const rawMonthName = parts.join(" ").trim();
+  const normalizedMonthName =
+    HIJRI_MONTH_ALIAS_LOOKUP[rawMonthName.toLowerCase()] || rawMonthName;
+  const monthIndex = HIJRI_MONTHS_ID.findIndex(
+    (name) => name.toLowerCase() === normalizedMonthName.toLowerCase()
+  );
+  if (!day || !year || monthIndex < 0) return null;
+  return moment()
+    .startOf("day")
+    .iYear(year)
+    .iMonth(monthIndex)
+    .iDate(day);
+};
+
+const buildHijriDateVariants = (momentObj, rawInput) => {
+  const variants = new Set();
+  if (rawInput) {
+    variants.add(rawInput.replace(" H", "").trim());
+    variants.add(rawInput.trim());
+  }
+
+  if (momentObj && momentObj.isValid()) {
+    const day = momentObj.iDate();
+    const year = momentObj.iYear();
+    const canonicalMonth = HIJRI_MONTHS_ID[momentObj.iMonth()];
+    const monthVariants = HIJRI_MONTH_VARIANTS[canonicalMonth] || [canonicalMonth];
+
+    monthVariants.forEach((variant) => {
+      variants.add(`${day} ${variant} ${year}`);
+      variants.add(`${day} ${variant} ${year} H`);
+    });
+  }
+
+  return Array.from(variants).filter(Boolean);
+};
+
 // Fungsi untuk mencatat amalan harian
 const catatAmalanHarian = async (req, res) => {
   try {
@@ -216,6 +343,7 @@ const getAmalanHarian = async (req, res) => {
     console.log(`🔄 Mengambil data kalender Hijriah dari API MyQuran...`);
 
     let currentHijriDate = "Unknown";
+    let hijriTodayMoment = null;
 
     try {
       const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr/?adj=-1`;
@@ -225,8 +353,21 @@ const getAmalanHarian = async (req, res) => {
       console.log("✅ Response dari API MyQuran:");
       console.log(JSON.stringify(calData, null, 2));
 
-      if (calData && calData.status && Array.isArray(calData.data.date)) {
+      if (
+        calData &&
+        calData.status &&
+        Array.isArray(calData.data.date) &&
+        Array.isArray(calData.data.num)
+      ) {
         currentHijriDate = calData.data.date[1].replace(" H", "");
+        hijriTodayMoment = hijriMomentFromApiNumbers(calData.data.num);
+        if (!hijriTodayMoment || !hijriTodayMoment.isValid()) {
+          hijriTodayMoment = hijriMomentFromString(currentHijriDate);
+        }
+        const normalizedHijriToday = formatHijriDateId(hijriTodayMoment);
+        if (normalizedHijriToday) {
+          currentHijriDate = normalizedHijriToday;
+        }
         console.log(
           `📅 currentHijriDate (Acuan Hari Ini): ${currentHijriDate}`
         );
@@ -237,16 +378,25 @@ const getAmalanHarian = async (req, res) => {
       console.error("❌ Error mengambil kalender Hijriah dari API:", err);
     }
 
-    // 🔽 Ambil data amalan harian berdasarkan range 30 hari terakhir dari currentHijriDate
-    const hijriTodayMoment = moment(currentHijriDate, "D MMMM YYYY");
-    const hijriStartMoment = hijriTodayMoment.clone().subtract(30, "days");
+    if (!hijriTodayMoment || !hijriTodayMoment.isValid()) {
+      console.warn("⚠️ Gagal membentuk moment Hijriah, gunakan tanggal hari ini");
+      hijriTodayMoment = moment().startOf("day");
+    }
 
-    const hijriStartDate = hijriStartMoment.format("D MMMM YYYY");
-    const hijriEndDate = currentHijriDate;
-
-    console.log(
-      `📆 Mengambil amalan dari ${hijriStartDate} hingga ${hijriEndDate}`
+    const requestedHijriDateRaw = req.query?.hijriDate || currentHijriDate;
+    let requestedHijriMoment = hijriMomentFromString(requestedHijriDateRaw);
+    if (!requestedHijriMoment || !requestedHijriMoment.isValid()) {
+      requestedHijriMoment = hijriTodayMoment;
+    }
+    const requestedHijriDate =
+      formatHijriDateId(requestedHijriMoment) || currentHijriDate;
+    const hijriDateVariants = buildHijriDateVariants(
+      requestedHijriMoment,
+      requestedHijriDateRaw
     );
+
+    console.log(`📆 Mengambil amalan untuk tanggal ${requestedHijriDate}`);
+    console.log("🎯 Variasi tanggal Hijriah yang dicari:", hijriDateVariants);
 
     // Ambil semua amalan
     const daftarAmalan = await db("amalan")
@@ -254,17 +404,39 @@ const getAmalanHarian = async (req, res) => {
       .where("status","active")
       .orderBy("order_number", "asc");
 
-    // Ambil amalan harian yang sudah dicatat dalam rentang hijri_date
-    const amalanHarian = await db("amalan_harian")
+    console.log(`📋 Total amalan aktif diambil: ${daftarAmalan.length}`);
+
+    // Ambil amalan harian yang sudah dicatat untuk tanggal yang diminta
+    const amalanHarianQuery = db("amalan_harian")
       .select("amalan_id", "status", "nilai", "hijri_date")
-      .where("user_id", userId)
-      .andWhere("hijri_date", ">=", hijriStartDate)
-      .andWhere("hijri_date", "<=", hijriEndDate);
+      .where("user_id", userId);
+
+    if (hijriDateVariants.length > 0) {
+      amalanHarianQuery.whereIn("hijri_date", hijriDateVariants);
+    } else {
+      amalanHarianQuery.andWhere("hijri_date", requestedHijriDate);
+    }
+
+    const amalanHarian = await amalanHarianQuery;
+
+    console.log(
+      "🗂️ Amalan harian di DB:",
+      amalanHarian.map((item) => ({
+        amalan_id: item.amalan_id,
+        status: item.status,
+        nilai: item.nilai,
+        hijri_date: item.hijri_date,
+      }))
+    );
 
     const amalanDicatat = {};
     amalanHarian.forEach((item) => {
-      if (!amalanDicatat[item.hijri_date]) amalanDicatat[item.hijri_date] = {};
-      amalanDicatat[item.hijri_date][item.amalan_id] = {
+      const normalizedKey =
+        formatHijriDateId(hijriMomentFromString(item.hijri_date)) ||
+        item.hijri_date;
+
+      if (!amalanDicatat[normalizedKey]) amalanDicatat[normalizedKey] = {};
+      amalanDicatat[normalizedKey][item.amalan_id] = {
         status: item.status,
         nilai: item.nilai || "",
       };
@@ -277,14 +449,24 @@ const getAmalanHarian = async (req, res) => {
       type: item.type,
       options: item.options,
       parentId: item.parent_id,
-      done: amalanDicatat[currentHijriDate]?.[item.id]?.status || false,
-      nilai: amalanDicatat[currentHijriDate]?.[item.id]?.nilai || "",
+      done: amalanDicatat[requestedHijriDate]?.[item.id]?.status || false,
+      nilai: amalanDicatat[requestedHijriDate]?.[item.id]?.nilai || "",
     }));
+
+    console.log(
+      "📤 Data amalan yang dikirim ke frontend:",
+      hasil.map((item) => ({
+        id: item.id,
+        nama: item.nama,
+        done: item.done,
+        nilai: item.nilai,
+      }))
+    );
 
     res.json({
       success: true,
-      hijriDate: currentHijriDate,
-      currentHijriDate,
+      hijriDate: requestedHijriDate,
+      currentHijriDate: requestedHijriDate,
       tanggalMasehi: todayMasehi,
       data: hasil,
     });
