@@ -337,38 +337,19 @@ exports.getDetailLaporanTholib = async (req, res) => {
       .groupBy("hijri_date")
       .orderBy("hijri_date", "asc");
 
-      //Syawal
-    const resultsSyawalQuery = db("amalan_harian")
-    .join("amalan", "amalan.id", "amalan_harian.amalan_id")
-    .select("amalan_harian.hijri_date", db.raw("COUNT(*) as total"))
-    .where({
-      "amalan_harian.user_id": tholibId,
-      "amalan_harian.status": true,
-      "amalan.name": "Puasa Syawal 1446H",
-    })
-    .groupBy("amalan_harian.hijri_date")
-    .orderBy("amalan_harian.hijri_date", "asc");
-
-    if (monthDayVariants && monthDayVariants.length) {
-      resultsSyawalQuery.whereIn("amalan_harian.hijri_date", monthDayVariants);
-    }
-
-    const resultsSyawal = await resultsSyawalQuery;
-
-    const syawalAggregated = {};
-    resultsSyawal.forEach((row) => {
+    const aggCounts = {};
+    results.forEach((row) => {
       const { formatted } = parseHijriDateSafe(row.hijri_date, {
         defaultMonth: hijriCurrentMonth,
         defaultYear: hijriCurrentYear,
       });
       const key = formatted || row.hijri_date;
-      syawalAggregated[key] =
-        (syawalAggregated[key] || 0) + parseInt(row.total, 10);
+      aggCounts[key] = (aggCounts[key] || 0) + parseInt(row.total, 10);
     });
 
     const laporan = fullDateRange.map((date) => ({
       hijri_date: date,
-      total: syawalAggregated[date] || 0,
+      total: aggCounts[date] || 0,
     }));
 
     // 🔹 Ambil daftar amalan untuk tanggal yang dipilih
@@ -517,6 +498,8 @@ exports.getDetailLaporanTholibMingguan = async (req, res) => {
       .leftJoin("amalan_harian as ah", function () {
         this.on("a.id", "=", "ah.amalan_id").andOn("ah.user_id", "=", db.raw("?", [tholibId]));
       })
+      .where("a.status", "active")
+      .whereIn("a.type", ["checklist", "dropdown"])
       .whereBetween("ah.hijri_date", [startHijriDate, endHijriDate])
       .orderBy("a.order_number", "asc");
 
