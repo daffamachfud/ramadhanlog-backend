@@ -383,6 +383,70 @@ const addAmalanByMurabbi = async (req, res) => {
   }
 };
 
+const deleteAmalanByMurabbi = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (userRole !== "murabbi" && userRole !== "pengawas") {
+      return res
+        .status(403)
+        .json({ message: "Akses hanya untuk Murabbi atau Pengawas" });
+    }
+
+    const amalan = await db("amalan").where({ id }).first();
+
+    if (!amalan) {
+      return res.status(404).json({ message: "Amalan tidak ditemukan" });
+    }
+
+    // if (amalan.is_for_all_halaqah) {
+    //   return res.status(403).json({
+    //     message: "Amalan global tidak dapat dihapus oleh Murabbi",
+    //   });
+    // }
+
+    let halaqahIds = [];
+
+    if (userRole === "murabbi") {
+      halaqahIds = await db("halaqah").where("murabbi_id", userId).pluck("id");
+    } else if (userRole === "pengawas") {
+      halaqahIds = await db("relasi_pengawas_halaqah")
+        .where("pengawas_id", userId)
+        .pluck("halaqah_id");
+    }
+
+    if (halaqahIds.length === 0) {
+      return res.status(403).json({
+        message: "Tidak ada halaqah yang terhubung dengan akun ini",
+      });
+    }
+
+    // const relasi = await db("amalan_halaqah")
+    //   .where("amalan_id", id)
+    //   .whereIn("halaqah_id", halaqahIds)
+    //   .first();
+
+    // if (!relasi) {
+    //   return res.status(403).json({
+    //     message: "Anda tidak memiliki akses untuk menghapus amalan ini",
+    //   });
+    // }
+
+    await db.transaction(async (trx) => {
+      await trx("amalan_halaqah").where("amalan_id", id).del();
+      await trx("amalan_harian").where("amalan_id", id).del();
+      await trx("amalan").where({ id }).del();
+    });
+
+    res.json({ message: "Amalan berhasil dihapus" });
+  } catch (error) {
+    console.error("Error deleting amalan:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
 const updateAmalanStatus = async (req, res) => {
   const { id, status } = req.body;
 
@@ -428,5 +492,6 @@ module.exports = {
   getAmalanHarian,
   getAllAmalanForMurabbi,
   addAmalanByMurabbi,
+  deleteAmalanByMurabbi,
   updateAmalanStatus,
 };

@@ -7,7 +7,8 @@ const {
   getAllAmalanForMurabbi,
   addAmalanByMurabbi,
   updateAmalanStatus,
-  getAmalanById
+  getAmalanById,
+  deleteAmalanByMurabbi,
 } = require("../controllers/amalanController");
 
 const router = express.Router();
@@ -20,5 +21,6 @@ router.get("/get-amalan-for-murabbi", verifyToken, getAllAmalanForMurabbi);
 router.post("/add", verifyToken, addAmalanByMurabbi);
 router.post("/update-status", verifyToken, updateAmalanStatus);
 router.get("/:id", verifyToken, getAmalanById); // <-- Tambahan penting!
+router.delete("/:id", verifyToken, deleteAmalanByMurabbi);
 
 module.exports = router;
