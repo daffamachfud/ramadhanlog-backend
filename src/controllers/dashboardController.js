@@ -2,6 +2,57 @@ const db = require("../db/knex");
 const moment = require("moment-hijri");
 moment.locale("en");
 
+const HIJRI_MONTH_VARIANTS = {
+  "Jumadil Awal": ["Jumadil Awal", "Jumadil Awwal", "Jumada al-Awwal", "Jumadil Ula"],
+  "Jumadil Akhir": ["Jumadil Akhir", "Jumadil Tsani", "Jumadil Thani", "Jumada al-Akhirah"],
+  "Rabiul Awal": ["Rabiul Awal", "Rabiul Awwal", "Rabi'ul Awal"],
+  "Rabiul Akhir": ["Rabiul Akhir", "Rabiul Tsani", "Rabi'ul Akhir"],
+};
+
+const normalizeHijriMonth = (month = "") => {
+  const lower = month.toLowerCase();
+  for (const [canonical, variants] of Object.entries(HIJRI_MONTH_VARIANTS)) {
+    if (variants.some((v) => v.toLowerCase() === lower)) {
+      return canonical;
+    }
+  }
+  return month;
+};
+
+const buildHijriDateVariants = (day = "", month = "", year = "") => {
+  const variants = new Set();
+  const normalizedMonth = normalizeHijriMonth(month);
+  variants.add(`${day} ${normalizedMonth} ${year}`.trim());
+
+  const monthVariants = Object.entries(HIJRI_MONTH_VARIANTS).find(
+    ([canonical]) => canonical === normalizedMonth
+  );
+  if (monthVariants) {
+    const [, names] = monthVariants;
+    names.forEach((name) => variants.add(`${day} ${name} ${year}`.trim()));
+  }
+
+  variants.add(`${day} ${normalizedMonth} ${year}`.replace(` ${year}`, "").trim());
+  return Array.from(variants).filter(Boolean);
+};
+
+const parseHijriDate = (rawDate = "") => {
+  const cleaned = rawDate.replace(" H", "").trim();
+  const parts = cleaned.split(" ").filter(Boolean);
+
+  if (parts.length === 0) {
+    return { day: "", month: "", year: "", formatted: "", variants: [] };
+  }
+
+  const day = parts.shift();
+  const year = parts.pop() || "";
+  const month = parts.join(" ").trim();
+  const normalized = `${day} ${normalizeHijriMonth(month)} ${year}`.trim();
+  const variants = buildHijriDateVariants(day, month, year);
+
+  return { day, month: normalizeHijriMonth(month), year, formatted: normalized, variants };
+};
+
 const getDashboardMurabbi = async (req, res) => {
   try {
     const murabbiId = req.user.id; // Ambil ID murabbi dari token JWT
@@ -40,8 +91,8 @@ const getDashboardMurabbi = async (req, res) => {
       if (hijriData.status && prayerData.status) {
         hijriDate = hijriData.data.date[1]; // Contoh: "30 Ramadhan 1446 H"
         // 🔁 Dinamis ambil nilai untuk DB
-        const [day, month, year] = hijriDate.replace(" H", "").split(" ");
-        hijriDateForDb = `${day} ${month} ${year}`;
+        const { formatted } = parseHijriDate(hijriDate);
+        hijriDateForDb = formatted;
 
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
@@ -191,8 +242,8 @@ const getDashboardPengawas = async (req, res) => {
         hijriDate = hijriData.data.date[1]; // Contoh: "5 Syawal 1446 H"
 
         // 🔁 Dinamis ambil nilai untuk DB
-        const [day, month, year] = hijriDate.replace(" H", "").split(" ");
-        hijriDateForDb = `${day} ${month} ${year}`;
+        const { formatted } = parseHijriDate(hijriDate);
+        hijriDateForDb = formatted;
 
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
@@ -315,6 +366,7 @@ const getDashboardTholib = async (req, res) => {
     let prayerTimes = {};
     let hijriYear = "";
     let hijriMonth = ""; // ✅ tambahkan variabel global untuk bulan Hijriah
+    let hijriDateVariants = [];
 
     try {
       const [hijriResponse, prayerResponse] = await Promise.all([
@@ -331,10 +383,11 @@ const getDashboardTholib = async (req, res) => {
 
       if (hijriData.status && prayerData.status) {
         hijriDate = hijriData.data.date[1];
-        const [day, month, year] = hijriDate.split(" ");
-        hijriDateForDb = `${day} ${month} ${year}`;
+        const { formatted, month, year, variants } = parseHijriDate(hijriDate);
+        hijriDateForDb = formatted;
         hijriMonth = month; // ✅ simpan di variabel luar
         hijriYear = year;
+        hijriDateVariants = variants;
 
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
@@ -371,7 +424,10 @@ const getDashboardTholib = async (req, res) => {
     const halaqahId = rel ? rel.halaqah_id : null;
 
     // 2) Ambil daftar amalan aktif untuk user/halaqah
-    let activeQuery = db('amalan').select('id', 'name').where({ status: 'active' });
+    let activeQuery = db('amalan')
+      .select('id', 'name', 'type')
+      .where({ status: 'active' })
+      .whereIn('type', ['checklist', 'dropdown']);
     if (halaqahId) {
       activeQuery = activeQuery.andWhere(function () {
         this.where('is_for_all_halaqah', true)
@@ -384,8 +440,16 @@ const getDashboardTholib = async (req, res) => {
     const activeAmalanIds = activeAmalan.map((a) => a.id);
 
     // 3) Ringkasan harian: completed vs total aktif
-    const [{ total: completedTodayStr }] = await db('amalan_harian')
-      .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
+    const completedTodayQuery = db('amalan_harian')
+      .where({ user_id: tholibId, status: true });
+
+    if (hijriDateVariants && hijriDateVariants.length > 0) {
+      completedTodayQuery.whereIn('hijri_date', hijriDateVariants);
+    } else {
+      completedTodayQuery.andWhere('hijri_date', hijriDateForDb);
+    }
+
+    const [{ total: completedTodayStr }] = await completedTodayQuery
       .whereIn('amalan_id', activeAmalanIds)
       .count('* as total');
     const completedToday = parseInt(completedTodayStr, 10) || 0;
@@ -401,25 +465,56 @@ const getDashboardTholib = async (req, res) => {
 
     // 4) Line chart bulan berjalan (hanya amalan aktif)
     const fullDateRange = [];
-    for (let i = 1; i <= 30; i++) fullDateRange.push(`${i} ${hijriMonth} ${hijriYear}`);
+    const dateVariantMap = new Map();
+    const monthVariantSet = new Set();
+    for (let i = 1; i <= 30; i++) {
+      const canonicalDate = `${i} ${hijriMonth} ${hijriYear}`;
+      fullDateRange.push(canonicalDate);
+      const { variants } = parseHijriDate(canonicalDate);
+      const dateVariants = variants.length ? variants : [canonicalDate];
+      dateVariantMap.set(canonicalDate, dateVariants);
+      dateVariants.forEach((variant) => monthVariantSet.add(variant));
+    }
 
-    const resultsActive = await db('amalan_harian')
+    const resultsActiveQuery = db('amalan_harian')
       .select('hijri_date', db.raw('COUNT(*) as total'))
       .where({ user_id: tholibId, status: true })
       .whereIn('amalan_id', activeAmalanIds)
-      .andWhere('hijri_date', 'like', `% ${hijriMonth} ${hijriYear}`)
       .groupBy('hijri_date')
       .orderBy('hijri_date', 'asc');
 
+    if (monthVariantSet.size > 0) {
+      resultsActiveQuery.whereIn('hijri_date', Array.from(monthVariantSet));
+    } else {
+      resultsActiveQuery.andWhere('hijri_date', 'like', `% ${hijriMonth} ${hijriYear}`);
+    }
+
+    const resultsActive = await resultsActiveQuery;
+
+    const aggregatedByCanonicalDate = {};
+    resultsActive.forEach((row) => {
+      const { formatted } = parseHijriDate(row.hijri_date);
+      const key = formatted || row.hijri_date;
+      aggregatedByCanonicalDate[key] =
+        (aggregatedByCanonicalDate[key] || 0) + parseInt(row.total, 10);
+    });
+
     const dataPerminggu = fullDateRange.map((date) => {
-      const existing = resultsActive.find((row) => row.hijri_date === date);
-      return { hijri_date: date, total: existing ? parseInt(existing.total) : 0 };
+      const total = aggregatedByCanonicalDate[date] || 0;
+      return { hijri_date: date, total };
     });
 
     // 5) Status amalan (hanya yang aktif)
-    const completedAmalan = await db('amalan_harian')
-      .where({ user_id: tholibId, hijri_date: hijriDateForDb, status: true })
-      .pluck('amalan_id');
+    const completedAmalanQuery = db('amalan_harian')
+      .where({ user_id: tholibId, status: true });
+
+    if (hijriDateVariants && hijriDateVariants.length > 0) {
+      completedAmalanQuery.whereIn('hijri_date', hijriDateVariants);
+    } else {
+      completedAmalanQuery.andWhere('hijri_date', hijriDateForDb);
+    }
+
+    const completedAmalan = await completedAmalanQuery.pluck('amalan_id');
     const completed = activeAmalan.filter((a) => completedAmalan.includes(a.id));
     const notCompleted = activeAmalan.filter((a) => !completedAmalan.includes(a.id));
     const statusAmalan = { completed: completed.map((a) => a.name), notCompleted: notCompleted.map((a) => a.name) };
