@@ -53,6 +53,25 @@ const parseHijriDate = (rawDate = "") => {
   return { day, month: normalizeHijriMonth(month), year, formatted: normalized, variants };
 };
 
+const collapseSpaces = (value = "") => value.replace(/\s+/g, " ").trim();
+
+const buildHijriDateMatchSet = (variants = [], canonical = "") => {
+  const set = new Set();
+  const addVariant = (v = "") => {
+    if (!v) return;
+    const collapsed = collapseSpaces(v.replace(/ H$/i, ""));
+    if (collapsed) {
+      set.add(collapsed);
+      set.add(`${collapsed} H`);
+    }
+  };
+
+  variants.forEach(addVariant);
+  addVariant(canonical);
+
+  return Array.from(set).filter(Boolean);
+};
+
 const getDashboardMurabbi = async (req, res) => {
   try {
     const murabbiId = req.user.id; // Ambil ID murabbi dari token JWT
@@ -74,6 +93,8 @@ const getDashboardMurabbi = async (req, res) => {
     let prayerTimes = {};
     let hijriDate = "";
     let hijriDateForDb = "";
+    let hijriDateMatchSet = [];
+    let hijriDateVariants = [];
 
     try {
       const [hijriResponse, prayerResponse] = await Promise.all([
@@ -242,11 +263,19 @@ const getDashboardPengawas = async (req, res) => {
         hijriDate = hijriData.data.date[1]; // Contoh: "5 Syawal 1446 H"
 
         // 🔁 Dinamis ambil nilai untuk DB
-        const { formatted } = parseHijriDate(hijriDate);
+        const { formatted, variants } = parseHijriDate(hijriDate);
         hijriDateForDb = formatted;
+        hijriDateVariants = variants;
+        hijriDateMatchSet = buildHijriDateMatchSet(variants, formatted);
 
         console.log(`📅 Tanggal Hijriah dari API: ${hijriDate}`);
         console.log(`📅 Tanggal Hijriah untuk DB: ${hijriDateForDb}`);
+        if (hijriDateVariants?.length) {
+          console.log(`📅 Variasi hijri_date untuk query:`, hijriDateVariants);
+        }
+        if (hijriDateMatchSet?.length) {
+          console.log(`📅 Set hijri_date yang dipakai whereIn:`, hijriDateMatchSet);
+        }
 
         const jadwal = prayerData.data.jadwal;
         prayerTimes = {
@@ -305,13 +334,35 @@ const getDashboardPengawas = async (req, res) => {
       });
     }
 
+    console.log("🔍 Pengawas dashboard -> query hijri_date", {
+      hijriDateRaw: hijriDate,
+      hijriDateForDb,
+      hijriDateMatchSet,
+      totalAnggota,
+      sampleAnggotaIds: anggotaIds.slice(0, 10),
+    });
+
     // 2️⃣ Hitung jumlah anggota yang sudah submit amalan harian
-    const reportedAnggota = await db("amalan_harian")
+    const reportedQuery = db("amalan_harian")
       .distinct("user_id")
-      .whereIn("user_id", anggotaIds)
-      .andWhere("hijri_date", hijriDateForDb);
+      .whereIn("user_id", anggotaIds);
+
+    if (hijriDateMatchSet && hijriDateMatchSet.length > 0) {
+      reportedQuery.whereIn("hijri_date", hijriDateMatchSet);
+    } else {
+      reportedQuery.andWhere("hijri_date", hijriDateForDb);
+    }
+
+    const reportedAnggota = await reportedQuery;
 
     const reportedCount = reportedAnggota.length;
+    console.log("📈 Hasil query reported/unreported", {
+      hijriDateForDb,
+      hijriDateVariants,
+      hijriDateMatchSet,
+      reportedCount,
+      unreportedEst: totalAnggota - reportedCount,
+    });
 
     // 3️⃣ Hitung jumlah anggota yang belum laporan
     const unreportedCount = totalAnggota - reportedCount;
