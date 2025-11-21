@@ -57,13 +57,20 @@ const normalizeHijriMonth = (month = "") => {
 };
 
 const buildHijriDateVariants = (day, month, year) => {
-  if (!month || !year) return [];
+  if (!month) return [];
   const variants = new Set();
   const monthVariants = HIJRI_MONTH_VARIANTS[month] || [month];
+  const yearStr = (year || "").toString().trim();
   monthVariants.forEach((variantMonth) => {
-    const base = `${day} ${variantMonth} ${year}`.trim();
-    variants.add(base);
-    variants.add(`${base} H`.trim());
+    const baseNoYear = `${day} ${variantMonth}`.trim();
+    variants.add(baseNoYear);
+    variants.add(`${baseNoYear} H`.trim());
+
+    if (yearStr) {
+      const baseWithYear = `${baseNoYear} ${yearStr}`.trim();
+      variants.add(baseWithYear);
+      variants.add(`${baseWithYear} H`.trim());
+    }
   });
   return Array.from(variants);
 };
@@ -109,14 +116,21 @@ const parseHijriDateSafe = (
 };
 
 const buildMonthDayVariants = (month, year, maxDay = 30) => {
-  if (!month || !year) return [];
+  if (!month) return [];
   const variants = new Set();
   const monthVariants = HIJRI_MONTH_VARIANTS[month] || [month];
+  const yearStr = (year || "").toString().trim();
   for (let i = 1; i <= maxDay; i++) {
     monthVariants.forEach((variantMonth) => {
-      const base = `${i} ${variantMonth} ${year}`.trim();
-      variants.add(base);
-      variants.add(`${base} H`.trim());
+      const baseNoYear = `${i} ${variantMonth}`.trim();
+      variants.add(baseNoYear);
+      variants.add(`${baseNoYear} H`.trim());
+
+      if (yearStr) {
+        const baseWithYear = `${baseNoYear} ${yearStr}`.trim();
+        variants.add(baseWithYear);
+        variants.add(`${baseWithYear} H`.trim());
+      }
     });
   }
   return Array.from(variants);
@@ -261,11 +275,7 @@ exports.getDetailLaporanTholib = async (req, res) => {
 
     // 🔹 Ambil tanggal Hijriah hari ini dari API MyQuran
     const hijriApiUrl = `https://api.myquran.com/v2/cal/hijr/?adj=-1`;
-    let hijriCurrentDate,
-      hijriCurrentDay,
-      hijriCurrentMonth,
-      hijriCurrentYear,
-      hijriCurrentVariants;
+    let hijriCurrentDate, hijriCurrentDay, hijriCurrentMonth, hijriCurrentYear;
 
     try {
       const hijriResponse = await fetch(hijriApiUrl);
@@ -278,11 +288,6 @@ exports.getDetailLaporanTholib = async (req, res) => {
         hijriCurrentDay = parsedCurrent.day;
         hijriCurrentMonth = parsedCurrent.month;
         hijriCurrentYear = parsedCurrent.year;
-        hijriCurrentVariants = buildMonthDayVariants(
-          hijriCurrentMonth,
-          hijriCurrentYear
-        );
-
         console.log(`📅 Tanggal Hijriah Saat Ini: ${hijriCurrentDate}`);
       } else {
         console.error("⚠️ Gagal mengambil tanggal Hijriah dari API");
@@ -305,19 +310,29 @@ exports.getDetailLaporanTholib = async (req, res) => {
       defaultMonth: hijriCurrentMonth,
       defaultYear: hijriCurrentYear,
     });
-    const selectedHijriDate = selectedParsed.formatted;
-    const selectedHijriVariants = selectedParsed.variants;
+    const targetDay = selectedParsed.day || hijriCurrentDay;
+    const targetMonth = selectedParsed.month || hijriCurrentMonth;
+    const targetYear = selectedParsed.year || hijriCurrentYear;
+    const selectedHijriDate = [targetDay, targetMonth, targetYear]
+      .filter(Boolean)
+      .join(" ");
+    const selectedHijriVariants = Array.from(
+      new Set([
+        ...buildHijriDateVariants(targetDay, targetMonth, targetYear),
+        ...(selectedParsed.variants || []),
+      ])
+    );
     console.log("Selected date query : ", selectedHijriDate);
 
-    // 🔹 Buat rentang tanggal dinamis berdasarkan hari saat ini
-    const fullDateRange = [];
-    for (let i = 1; i <= 30; i++) {
-      fullDateRange.push(`${i} ${hijriCurrentMonth} ${hijriCurrentYear}`);
-    }
-    const monthDayVariants =
-      hijriCurrentVariants && hijriCurrentVariants.length
-        ? hijriCurrentVariants
-        : buildMonthDayVariants(hijriCurrentMonth, hijriCurrentYear);
+    // 🔹 Buat rentang tanggal dinamis berdasarkan tanggal terpilih
+    const fullDateRange = Array.from(
+      { length: 30 },
+      (_, i) => `${i + 1} ${targetMonth} ${targetYear}`
+    );
+    const monthDayVariants = buildMonthDayVariants(
+      targetMonth,
+      targetYear
+    );
 
     // 🔹 Ambil data amalan harian
     const results = await db("amalan_harian")
@@ -326,12 +341,12 @@ exports.getDetailLaporanTholib = async (req, res) => {
       .modify((qb) => {
         if (monthDayVariants && monthDayVariants.length) {
           qb.whereIn("hijri_date", monthDayVariants);
-        } else {
-          qb.andWhere(
-            "hijri_date",
-            "like",
-            `% ${hijriCurrentMonth} ${hijriCurrentYear}`
-          );
+        } else if (targetMonth) {
+          const likePattern = [`%`, targetMonth, targetYear || ""]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          qb.andWhere("hijri_date", "like", likePattern);
         }
       })
       .groupBy("hijri_date")
@@ -340,8 +355,8 @@ exports.getDetailLaporanTholib = async (req, res) => {
     const aggCounts = {};
     results.forEach((row) => {
       const { formatted } = parseHijriDateSafe(row.hijri_date, {
-        defaultMonth: hijriCurrentMonth,
-        defaultYear: hijriCurrentYear,
+        defaultMonth: targetMonth,
+        defaultYear: targetYear,
       });
       const key = formatted || row.hijri_date;
       aggCounts[key] = (aggCounts[key] || 0) + parseInt(row.total, 10);
@@ -388,8 +403,9 @@ exports.getDetailLaporanTholib = async (req, res) => {
       .orderBy("ah.status", "asc");
 
     // 🔹 Format button dates
-    const buttonDates = Array.from({ length: hijriCurrentDay }, (_, i) => {
-      return `${i + 1} ${hijriCurrentMonth} ${hijriCurrentYear}`;
+    const buttonDayCount = Math.min(Number(targetDay) || 30, 30);
+    const buttonDates = Array.from({ length: buttonDayCount }, (_, i) => {
+      return `${i + 1} ${targetMonth} ${targetYear}`;
     });
 
     // 🔹 Format final response
